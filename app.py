@@ -3,12 +3,11 @@ import qrcode
 import io
 import base64
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')  # ← IMPORTANT!
 
-# Simple routes
 @app.route('/')
 def home():
-    return "QR Scanner is working! <a href='/scanner'>Scan QR</a> | <a href='/generator'>Generate QR</a>"
+    return render_template('index.html')  # ← Uses templates/index.html
 
 @app.route('/scanner')
 def scanner():
