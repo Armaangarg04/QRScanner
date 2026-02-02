@@ -1,41 +1,49 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generate QR Code | QR Security Scanner</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <title>QR Generator</title>
+    <style>
+        body { font-family: Arial; padding: 20px; text-align: center; }
+        .btn { padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+        textarea { width: 80%; height: 100px; margin: 10px 0; }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1><i class="fas fa-barcode"></i> Generate QR Code</h1>
-            <a href="/" class="back-link"><i class="fas fa-arrow-left"></i> Back to Home</a>
-        </header>
-
-        <div class="generator-container">
-            <!-- Generator content (use the full version from earlier) -->
-            <div class="generator-left">
-                <h2><i class="fas fa-edit"></i> Input Content</h2>
-                <div class="input-section">
-                    <!-- Tab buttons and forms -->
-                </div>
-            </div>
-            
-            <div class="generator-right">
-                <h2><i class="fas fa-qrcode"></i> Generated QR Code</h2>
-                <div id="qr-preview" class="qr-preview">
-                    <!-- QR will appear here -->
-                </div>
-            </div>
-        </div>
+    <h1>QR Code Generator</h1>
+    
+    <div>
+        <textarea id="qr-text" placeholder="Enter text or URL to generate QR code"></textarea>
+        <br>
+        <button onclick="generateQR()" class="btn">Generate QR Code</button>
     </div>
-
-    <script src="/static/script.js"></script>
+    
+    <div id="qr-result" style="margin-top: 20px;"></div>
+    
+    <p style="margin-top: 30px;"><a href="/" class="btn">← Back to Home</a></p>
+    
     <script>
-        // Generator JavaScript (use full version from earlier)
+        async function generateQR() {
+            const text = document.getElementById('qr-text').value;
+            if (!text) {
+                alert('Please enter some text');
+                return;
+            }
+            
+            const response = await fetch('/api/generate-qr', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: text})
+            });
+            
+            const data = await response.json();
+            if (data.success) {
+                document.getElementById('qr-result').innerHTML = `
+                    <h3>Your QR Code:</h3>
+                    <img src="${data.qr_code}" style="max-width: 200px;">
+                    <p><small>Right-click to save image</small></p>
+                `;
+            }
+        }
     </script>
 </body>
 </html>
