@@ -1,54 +1,62 @@
-from flask import Flask, send_from_directory, jsonify, request
-import qrcode
-import base64
-import os
+import re
+from urllib.parse import urlparse
 
-app = Flask(__name__, static_folder='.', static_url_path='')
-
-# Serve HTML files
-@app.route('/')
-def serve_index():
-    return send_from_directory('.', 'index.html')
-
-@app.route('/<page>.html')
-def serve_page(page):
-    return send_from_directory('.', f'{page}.html')
-
-# API endpoint for QR generation (without Pillow)
-@app.route('/api/generate-qr', methods=['POST'])
-def generate_qr():
+# Add this route to your existing app.py
+@app.route('/api/check-url', methods=['POST'])
+def check_url():
     try:
         data = request.json
-        text = data.get('text', 'Test QR')
+        url = data.get('url', '')
         
-        # Generate QR code using pure qrcode (no Pillow)
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(text)
-        qr.make(fit=True)
+        if not url:
+            return jsonify({"error": "No URL provided"}), 400
         
-        # Create image matrix (no Pillow)
-        matrix = qr.get_matrix()
+        # Parse the URL
+        parsed = urlparse(url)
+        domain = parsed.netloc
         
-        # Create simple ASCII QR for now
-        # We'll return text instead of image temporarily
-        ascii_qr = ''
-        for row in matrix:
-            ascii_qr += ''.join(['██' if cell else '  ' for cell in row]) + '\n'
+        # Basic security checks
+        suspicious_keywords = ['free', 'download', 'claim', 'won', 'bank', 'password', 'login', 'verify']
+        suspicious_patterns = [
+            r'\d{16}',  # Credit card numbers
+            r'bit\.ly|goo\.gl|tinyurl',  # URL shorteners
+        ]
+        
+        # Check for suspicious content
+        is_suspicious = False
+        reasons = []
+        
+        # Check domain length (very short domains can be suspicious)
+        if len(domain) < 5:
+            is_suspicious = True
+            reasons.append("Very short domain name")
+        
+        # Check for keywords
+        url_lower = url.lower()
+        for keyword in suspicious_keywords:
+            if keyword in url_lower:
+                is_suspicious = True
+                reasons.append(f"Contains suspicious keyword: '{keyword}'")
+                break
+        
+        # Check for patterns
+        for pattern in suspicious_patterns:
+            if re.search(pattern, url, re.IGNORECASE):
+                is_suspicious = True
+                reasons.append("Matches suspicious pattern")
+                break
+        
+        # Calculate risk score (simple example)
+        risk_score = 0.7 if is_suspicious else 0.1
         
         return jsonify({
-            "success": True,
-            "text": text,
-            "ascii_qr": ascii_qr,
-            "message": "QR generated successfully! Upgrade to image version soon."
+            "url": url,
+            "domain": domain,
+            "suspicious": is_suspicious,
+            "warning": "⚠️ This URL appears suspicious. Reasons: " + ", ".join(reasons) if is_suspicious else "✅ This URL appears safe",
+            "domain_prob": risk_score,
+            "reasons": reasons if is_suspicious else []
         })
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
