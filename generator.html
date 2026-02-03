@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR Code Generator</title>
-    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <title>QR Generator</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        .container { text-align: center; }
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
         textarea { width: 100%; height: 100px; padding: 10px; margin: 10px 0; }
-        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
-        #qrcode { margin: 20px auto; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; }
+        #qr-output { margin: 20px auto; max-width: 300px; }
+        .error { color: red; margin: 10px; }
     </style>
 </head>
 <body>
@@ -18,47 +18,66 @@
         <h1>QR Code Generator</h1>
         <textarea id="text-input" placeholder="Enter text or URL..."></textarea><br>
         <button onclick="generateQR()">Generate QR Code</button>
-        <button onclick="downloadQR()" id="download-btn" style="display:none;">Download QR Code</button>
-        <div id="qrcode"></div>
+        <button onclick="downloadQR()" id="download-btn" style="display:none;">Download SVG</button>
+        <div id="qr-output"></div>
+        <div id="error" class="error"></div>
     </div>
 
     <script>
-        let currentQR = null;
-        
-        function generateQR() {
+        async function generateQR() {
             const text = document.getElementById('text-input').value.trim();
             if (!text) {
-                alert('Please enter some text or URL');
+                showError('Please enter some text');
                 return;
             }
             
-            document.getElementById('qrcode').innerHTML = '';
+            document.getElementById('error').textContent = '';
+            document.getElementById('qr-output').innerHTML = 'Generating...';
             
-            QRCode.toCanvas(document.getElementById('qrcode'), text, {
-                width: 300,
-                margin: 2,
-                color: {
-                    dark: '#000000',
-                    light: '#FFFFFF'
-                }
-            }, function(error) {
-                if (error) {
-                    alert('Error generating QR code: ' + error);
-                } else {
-                    currentQR = text;
+            try {
+                const response = await fetch('/api/generate-qr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: text })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Display SVG QR code
+                    document.getElementById('qr-output').innerHTML = result.qr_code;
                     document.getElementById('download-btn').style.display = 'inline-block';
+                    document.getElementById('download-btn').dataset.qrSvg = result.qr_code;
+                    document.getElementById('download-btn').dataset.filename = `qrcode-${Date.now()}.svg`;
+                } else {
+                    showError(result.error || 'Failed to generate QR code');
                 }
-            });
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            }
         }
         
         function downloadQR() {
-            if (!currentQR) return;
+            const svg = document.getElementById('download-btn').dataset.qrSvg;
+            const filename = document.getElementById('download-btn').dataset.filename;
             
-            const canvas = document.querySelector('#qrcode canvas');
+            if (!svg) return;
+            
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            link.download = 'qrcode.png';
-            link.href = canvas.toDataURL('image/png');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
+        
+        function showError(message) {
+            document.getElementById('error').textContent = message;
         }
     </script>
 </body>
