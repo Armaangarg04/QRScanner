@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>QR Security Scanner</title>
-    <!-- Add Font Awesome for icons -->
+    <title>QR Scanner</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body {
@@ -17,20 +16,23 @@
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 40px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-        }
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        .feature-card {
-            background: #f5f5f5;
             padding: 20px;
             border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .scanner-container {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 10px;
+        }
+        #qr-reader {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            overflow: hidden;
         }
         .btn {
             display: inline-block;
@@ -38,54 +40,492 @@
             margin: 10px;
             background: #667eea;
             color: white;
-            text-decoration: none;
+            border: none;
             border-radius: 5px;
-            font-weight: bold;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
         }
         .btn:hover {
             background: #764ba2;
         }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        .url-display {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border: 1px solid #ffeaa7;
+        }
+        .safe {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border: 1px solid #c3e6cb;
+        }
+        .camera-info {
+            background: #e8f4f8;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
     </style>
+    <!-- Include QR scanner library -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
     <div class="header">
-        <h1>🔒 QR Security Scanner</h1>
-        <p>AI-powered QR code security analysis tool</p>
+        <h1><i class="fas fa-camera"></i> QR Code Scanner</h1>
+        <p>Scan QR codes using your back camera or upload images</p>
     </div>
     
-    <div class="features">
-        <div class="feature-card">
-            <h3>📷 Scan QR Codes</h3>
-            <p>Use camera or upload images to scan QR codes safely</p>
+    <a href="/" class="btn"><i class="fas fa-arrow-left"></i> Back to Home</a>
+    
+    <div class="scanner-container">
+        <h2><i class="fas fa-video"></i> Live Camera Scanner</h2>
+        <div id="qr-reader"></div>
+        
+        <div id="camera-status" class="camera-info" style="display: none;">
+            <i class="fas fa-info-circle"></i> <span id="camera-text">Initializing camera...</span>
         </div>
-        <div class="feature-card">
-            <h3>🔳 Generate QR Codes</h3>
-            <p>Create QR codes from text, URLs, or WiFi credentials</p>
+        
+        <div style="margin: 20px 0;">
+            <button id="start-scanner" class="btn">
+                <i class="fas fa-play"></i> Start Camera (Back Camera)
+            </button>
+            <button id="stop-scanner" class="btn btn-secondary" disabled>
+                <i class="fas fa-stop"></i> Stop Camera
+            </button>
+            <button id="upload-image" class="btn">
+                <i class="fas fa-upload"></i> Upload Image
+            </button>
+            <input type="file" id="file-input" accept="image/*" style="display: none;">
         </div>
-        <div class="feature-card">
-            <h3>🤖 AI Analysis</h3>
-            <p>Machine learning to detect suspicious URLs and content</p>
+        
+        <!-- Camera selector will appear here -->
+        <div id="camera-selector-container"></div>
+        
+        <div style="margin-top: 20px;">
+            <h3><i class="fas fa-keyboard"></i> Or Enter QR Content Manually</h3>
+            <textarea id="manual-input" placeholder="Paste QR code content here..." 
+                     style="width: 80%; height: 100px; padding: 10px; margin: 10px 0;"></textarea>
+            <br>
+            <button onclick="checkManualInput()" class="btn">
+                <i class="fas fa-search"></i> Analyze Content
+            </button>
         </div>
     </div>
     
-    <div>
-        <a href="/scanner.html" class="btn">Start Scanning</a>
-        <a href="/generator.html" class="btn">Generate QR Code</a>
+    <div class="results" id="scan-results" style="display: none;">
+        <h2><i class="fas fa-search"></i> Scan Results</h2>
+        <div id="result-content"></div>
     </div>
     
-    
-    <footer style="margin-top: 50px; padding: 20px; color: #666; border-top: 1px solid #eee;">
-        <p>QR Security Scanner v1.0</p>
-        <p>Made with ❤️ by <strong>Armaan Garg</strong></p>
-        <p style="font-size: 0.9em; margin-top: 10px;">
-            <a href="https://github.com/armaangarg04" target="_blank" style="color: #667eea;">
-                <i class="fab fa-github"></i> GitHub
-            </a> | 
-            <a href="mailto:armaangarg2006@gmail.com" style="color: #667eea;">
-                <i class="fas fa-envelope"></i> Contact
-            </a>
-        </p>
-    </footer>
-    
+    <div style="margin-top: 30px; padding: 20px; background: #e8f4f8; border-radius: 10px;">
+        <h3><i class="fas fa-info-circle"></i> How to Use</h3>
+        <ol style="text-align: left; display: inline-block;">
+            <li>Click "Start Camera" to open back camera (if available)</li>
+            <li>Point camera at QR code</li>
+            <li>Scanner will automatically detect QR codes</li>
+            <li>Use camera switcher if front camera opens instead</li>
+            <li>Or upload an image containing QR code</li>
+            <li>Results will show security analysis</li>
+        </ol>
+    </div>
+
+    <script>
+        let html5QrCode;
+        let currentCameraId = null;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            html5QrCode = new Html5Qrcode("qr-reader");
+            
+            // Start scanner button
+            document.getElementById('start-scanner').addEventListener('click', startScanner);
+            
+            // Stop scanner button
+            document.getElementById('stop-scanner').addEventListener('click', stopScanner);
+            
+            // Upload image button
+            document.getElementById('upload-image').addEventListener('click', () => {
+                document.getElementById('file-input').click();
+            });
+            
+            // File input change
+            document.getElementById('file-input').addEventListener('change', handleImageUpload);
+        });
+        
+        async function startScanner() {
+            const startBtn = document.getElementById('start-scanner');
+            const stopBtn = document.getElementById('stop-scanner');
+            const cameraStatus = document.getElementById('camera-status');
+            
+            try {
+                cameraStatus.style.display = 'block';
+                cameraStatus.querySelector('#camera-text').textContent = 'Looking for cameras...';
+                
+                // Get available cameras
+                const cameras = await Html5Qrcode.getCameras();
+                
+                if (!cameras || cameras.length === 0) {
+                    throw new Error('No cameras found on your device.');
+                }
+                
+                // Find back camera (rear-facing)
+                let selectedCamera = cameras[0]; // Default to first
+                let cameraType = 'Default';
+                
+                // Look for back camera by checking labels
+                for (const camera of cameras) {
+                    const label = camera.label.toLowerCase();
+                    
+                    // Check for back camera indicators
+                    if (label.includes('back') || 
+                        label.includes('rear') || 
+                        label.includes('environment') ||
+                        label.includes('2') || // Sometimes "camera2" is back
+                        label.includes('1')) { // Sometimes "camera1" is back
+                        
+                        selectedCamera = camera;
+                        cameraType = 'Back';
+                        console.log("Found back camera:", camera.label);
+                        break;
+                    }
+                }
+                
+                // If multiple cameras and we didn't find a specific back camera,
+                // try to use the last camera (often the back camera)
+                if (cameras.length > 1 && cameraType === 'Default') {
+                    selectedCamera = cameras[cameras.length - 1];
+                    cameraType = 'Back (assumed)';
+                    console.log("Using last camera as back camera:", selectedCamera.label);
+                }
+                
+                currentCameraId = selectedCamera.id;
+                
+                // Show camera info
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    `Using ${cameraType} camera: ${selectedCamera.label || 'Unknown'}`;
+                
+                // Create camera selection dropdown if multiple cameras
+                if (cameras.length > 1) {
+                    showCameraSelector(cameras, selectedCamera);
+                }
+                
+                // Try to start with back camera preference first
+                const qrConfig = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 }
+                };
+                
+                // Method 1: Try to use facingMode for back camera
+                try {
+                    await html5QrCode.start(
+                        { facingMode: "environment" }, // Try back camera
+                        qrConfig,
+                        onScanSuccess,
+                        onScanFailure
+                    );
+                    cameraType = 'Back (environment mode)';
+                } catch (facingModeErr) {
+                    console.log("facingMode failed, trying specific camera ID:", facingModeErr);
+                    
+                    // Method 2: Use specific camera ID
+                    await html5QrCode.start(
+                        selectedCamera.id,
+                        qrConfig,
+                        onScanSuccess,
+                        onScanFailure
+                    );
+                }
+                
+                // Update buttons
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-sync fa-spin"></i> Scanning...';
+                
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    `✓ Active: ${cameraType} camera - Point at QR code`;
+                
+            } catch (err) {
+                console.error("Camera error:", err);
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    '❌ Camera error: ' + err.message;
+                alert('Failed to start camera: ' + err.message);
+                
+                // Hide camera status after error
+                setTimeout(() => {
+                    cameraStatus.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        function showCameraSelector(cameras, currentCamera) {
+            const container = document.getElementById('camera-selector-container');
+            
+            let html = `
+                <div style="margin: 15px 0; padding: 15px; background: #f0f8ff; border-radius: 8px;">
+                    <h4 style="margin: 0 0 10px 0;">
+                        <i class="fas fa-camera-retro"></i> Camera Selection
+                    </h4>
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <select id="camera-switch" style="padding: 8px 12px; border-radius: 5px; border: 1px solid #667eea;">
+            `;
+            
+            cameras.forEach((camera, index) => {
+                const isSelected = camera.id === currentCamera.id;
+                const label = camera.label || `Camera ${index + 1}`;
+                const isBackCamera = label.toLowerCase().includes('back') || 
+                                     label.toLowerCase().includes('rear') ||
+                                     label.toLowerCase().includes('environment');
+                
+                html += `<option value="${camera.id}" ${isSelected ? 'selected' : ''}>
+                            ${isBackCamera ? '📷 ' : '📱 '}${label}
+                         </option>`;
+            });
+            
+            html += `
+                        </select>
+                        <button onclick="switchCamera()" class="btn" style="padding: 8px 15px;">
+                            <i class="fas fa-sync-alt"></i> Switch Camera
+                        </button>
+                    </div>
+                    <p style="margin: 10px 0 0 0; font-size: 13px; color: #666;">
+                        <i class="fas fa-info-circle"></i> Select "Back" or "Rear" camera for best QR scanning
+                    </p>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        async function switchCamera() {
+            const cameraSelect = document.getElementById('camera-switch');
+            const selectedCameraId = cameraSelect.value;
+            const selectedLabel = cameraSelect.options[cameraSelect.selectedIndex].text;
+            const cameraStatus = document.getElementById('camera-status');
+            
+            // Stop current scanner
+            await html5QrCode.stop();
+            
+            cameraStatus.querySelector('#camera-text').textContent = 
+                `Switching to ${selectedLabel}...`;
+            
+            // Start with new camera
+            try {
+                await html5QrCode.start(
+                    selectedCameraId,
+                    {
+                        fps: 10,
+                        qrbox: { width: 250, height: 250 }
+                    },
+                    onScanSuccess,
+                    onScanFailure
+                );
+                
+                currentCameraId = selectedCameraId;
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    `✓ Switched to: ${selectedLabel} - Point at QR code`;
+                
+                console.log("Successfully switched to camera:", selectedLabel);
+                
+            } catch (err) {
+                console.error("Failed to switch camera:", err);
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    '❌ Failed to switch camera: ' + err.message;
+                
+                // Try to restart with previous camera
+                setTimeout(async () => {
+                    try {
+                        await html5QrCode.start(
+                            currentCameraId,
+                            {
+                                fps: 10,
+                                qrbox: { width: 250, height: 250 }
+                            },
+                            onScanSuccess,
+                            onScanFailure
+                        );
+                        cameraStatus.querySelector('#camera-text').textContent = 
+                            '✓ Restarted with previous camera';
+                    } catch (restartErr) {
+                        cameraStatus.querySelector('#camera-text').textContent = 
+                            '❌ Camera stopped. Please restart.';
+                        document.getElementById('start-scanner').disabled = false;
+                        document.getElementById('stop-scanner').disabled = true;
+                        document.getElementById('start-scanner').innerHTML = '<i class="fas fa-play"></i> Start Camera';
+                    }
+                }, 1000);
+            }
+        }
+        
+        function stopScanner() {
+            html5QrCode.stop().then(() => {
+                document.getElementById('start-scanner').disabled = false;
+                document.getElementById('stop-scanner').disabled = true;
+                document.getElementById('start-scanner').innerHTML = '<i class="fas fa-play"></i> Start Camera (Back Camera)';
+                document.getElementById('camera-status').style.display = 'none';
+                document.getElementById('camera-selector-container').innerHTML = '';
+            }).catch(err => {
+                console.error("Stop error:", err);
+            });
+        }
+        
+        async function onScanSuccess(decodedText) {
+            console.log("QR Code detected:", decodedText);
+            
+            // Show results section
+            document.getElementById('scan-results').style.display = 'block';
+            
+            // Process the scanned content
+            await processScannedContent(decodedText);
+        }
+        
+        function onScanFailure(error) {
+            // Usually expected, not always an error
+            // console.log("QR scan failed (expected):", error);
+        }
+        
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // Use the QR scanner library to decode from image
+            html5QrCode.scanFile(file, true)
+                .then(decodedText => {
+                    onScanSuccess(decodedText);
+                    event.target.value = ''; // Clear input
+                })
+                .catch(err => {
+                    console.error("Image scan error:", err);
+                    alert('Could not read QR code from image. Please ensure it contains a valid QR code.');
+                });
+        }
+        
+        async function processScannedContent(text) {
+            const resultsDiv = document.getElementById('result-content');
+            
+            // Check if it's a URL
+            const isUrl = text.startsWith('http://') || text.startsWith('https://');
+            
+            if (isUrl) {
+                resultsDiv.innerHTML = `
+                    <div class="url-display">
+                        <strong>URL Detected:</strong><br>
+                        ${text}
+                    </div>
+                    <div id="url-analysis">
+                        <div class="warning">
+                            <i class="fas fa-spinner fa-spin"></i> Analyzing URL for security threats...
+                        </div>
+                    </div>
+                `;
+                
+                // Analyze the URL (call your Flask API)
+                try {
+                    const response = await fetch('/api/check-url', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ url: text })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    // Update with analysis results
+                    document.getElementById('url-analysis').innerHTML = `
+                        <div class="${data.suspicious ? 'warning' : 'safe'}">
+                            <i class="fas ${data.suspicious ? 'fa-exclamation-triangle' : 'fa-check-circle'}"></i>
+                            <strong>${data.suspicious ? '⚠️ SUSPICIOUS URL' : '✅ SAFE URL'}</strong>
+                            <p>${data.warning || 'No issues detected'}</p>
+                            ${!data.suspicious ? `
+                            <p><a href="${text}" target="_blank" class="btn" style="margin-top: 10px;">
+                                <i class="fas fa-external-link-alt"></i> Open Website
+                            </a></p>
+                            ` : ''}
+                        </div>
+                        <div style="margin-top: 20px;">
+                            <h4>Analysis Details:</h4>
+                            <p><strong>Domain:</strong> ${data.domain || 'Unknown'}</p>
+                            <p><strong>Risk Score:</strong> ${((data.domain_prob || 0) * 100).toFixed(1)}%</p>
+                        </div>
+                    `;
+                    
+                } catch (error) {
+                    document.getElementById('url-analysis').innerHTML = `
+                        <div class="warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <strong>Analysis Failed</strong>
+                            <p>Could not analyze URL: ${error.message}</p>
+                            <p><a href="${text}" target="_blank" class="btn" style="margin-top: 10px;">
+                                <i class="fas fa-external-link-alt"></i> Open URL (Caution)
+                            </a></p>
+                        </div>
+                    `;
+                }
+                
+            } else {
+                // Not a URL - plain text
+                resultsDiv.innerHTML = `
+                    <div class="url-display">
+                        <strong>Text Content:</strong><br>
+                        ${text}
+                    </div>
+                    <div class="safe">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Plain Text QR Code</strong>
+                        <p>This QR contains text, not a website URL.</p>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button onclick="copyToClipboard('${text.replace(/'/g, "\\'")}')" class="btn">
+                            <i class="fas fa-copy"></i> Copy Text
+                        </button>
+                    </div>
+                `;
+            }
+        }
+        
+        function checkManualInput() {
+            const text = document.getElementById('manual-input').value.trim();
+            if (text) {
+                document.getElementById('scan-results').style.display = 'block';
+                processScannedContent(text);
+            } else {
+                alert('Please enter some text to analyze');
+            }
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+    </script>
 </body>
 </html>
