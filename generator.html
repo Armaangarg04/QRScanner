@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QR Generator</title>
+    <style>
+        body { font-family: Arial; padding: 20px; text-align: center; }
+        .btn { padding: 10px 20px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; }
+        textarea { width: 80%; height: 100px; margin: 20px 0; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🔳 QR Code Generator</h1>
+    
+    <div>
+        <textarea id="qr-text" placeholder="Enter text or URL to generate QR code..."></textarea>
+        <br>
+        <button onclick="generateQR()" class="btn">Generate QR Code</button>
+    </div>
+    
+    <div id="qr-result" style="margin-top: 30px;"></div>
+    
+    <p style="margin-top: 30px;"><a href="/" class="btn">← Back to Home</a></p>
+    
+    <script>
+        async function generateQR() {
+            const text = document.getElementById('qr-text').value;
+            if (!text) {
+                alert('Please enter some text');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/generate-qr', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: text})
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById('qr-result').innerHTML = `
+                        <h3>Your QR Code:</h3>
+                        <img src="${data.qr_code}" style="max-width: 200px; border: 1px solid #ccc;">
+                        <p><small>Right-click to save image</small></p>
+                    `;
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Failed to generate QR code');
+            }
+        }
+    </script>
+</body>
+</html>
