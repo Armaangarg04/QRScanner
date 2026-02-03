@@ -12,7 +12,7 @@ def home():
 
 @app.route('/qr-generator')
 def qr_generator_page():
-    return render_template('qr_generator.html')  # The HTML above
+    return render_template('generator.html')  # The HTML above
 
 @app.route('/api/generate-qr', methods=['POST'])
 def generate_qr():
