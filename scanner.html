@@ -87,6 +87,13 @@
             margin: 10px 0;
             border: 1px solid #c3e6cb;
         }
+        .camera-info {
+            background: #e8f4f8;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
     </style>
     <!-- Include QR scanner library -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -94,7 +101,7 @@
 <body>
     <div class="header">
         <h1><i class="fas fa-camera"></i> QR Code Scanner</h1>
-        <p>Scan QR codes using your camera or upload images</p>
+        <p>Scan QR codes using your back camera or upload images</p>
     </div>
     
     <a href="/" class="btn"><i class="fas fa-arrow-left"></i> Back to Home</a>
@@ -103,9 +110,13 @@
         <h2><i class="fas fa-video"></i> Live Camera Scanner</h2>
         <div id="qr-reader"></div>
         
+        <div id="camera-status" class="camera-info" style="display: none;">
+            <i class="fas fa-info-circle"></i> <span id="camera-text">Initializing camera...</span>
+        </div>
+        
         <div style="margin: 20px 0;">
             <button id="start-scanner" class="btn">
-                <i class="fas fa-play"></i> Start Camera
+                <i class="fas fa-play"></i> Start Camera (Back Camera)
             </button>
             <button id="stop-scanner" class="btn btn-secondary" disabled>
                 <i class="fas fa-stop"></i> Stop Camera
@@ -115,6 +126,9 @@
             </button>
             <input type="file" id="file-input" accept="image/*" style="display: none;">
         </div>
+        
+        <!-- Camera selector will appear here -->
+        <div id="camera-selector-container"></div>
         
         <div style="margin-top: 20px;">
             <h3><i class="fas fa-keyboard"></i> Or Enter QR Content Manually</h3>
@@ -135,9 +149,10 @@
     <div style="margin-top: 30px; padding: 20px; background: #e8f4f8; border-radius: 10px;">
         <h3><i class="fas fa-info-circle"></i> How to Use</h3>
         <ol style="text-align: left; display: inline-block;">
-            <li>Click "Start Camera" and allow camera access</li>
+            <li>Click "Start Camera" to open back camera (if available)</li>
             <li>Point camera at QR code</li>
             <li>Scanner will automatically detect QR codes</li>
+            <li>Use camera switcher if front camera opens instead</li>
             <li>Or upload an image containing QR code</li>
             <li>Results will show security analysis</li>
         </ol>
@@ -145,6 +160,7 @@
 
     <script>
         let html5QrCode;
+        let currentCameraId = null;
         
         document.addEventListener('DOMContentLoaded', function() {
             html5QrCode = new Html5Qrcode("qr-reader");
@@ -167,35 +183,204 @@
         async function startScanner() {
             const startBtn = document.getElementById('start-scanner');
             const stopBtn = document.getElementById('stop-scanner');
+            const cameraStatus = document.getElementById('camera-status');
             
             try {
+                cameraStatus.style.display = 'block';
+                cameraStatus.querySelector('#camera-text').textContent = 'Looking for cameras...';
+                
                 // Get available cameras
                 const cameras = await Html5Qrcode.getCameras();
-                if (cameras && cameras.length) {
-                    const cameraId = cameras[0].id;
+                
+                if (!cameras || cameras.length === 0) {
+                    throw new Error('No cameras found on your device.');
+                }
+                
+                // Find back camera (rear-facing)
+                let selectedCamera = cameras[0]; // Default to first
+                let cameraType = 'Default';
+                
+                // Look for back camera by checking labels
+                for (const camera of cameras) {
+                    const label = camera.label.toLowerCase();
                     
-                    // Start scanning
+                    // Check for back camera indicators
+                    if (label.includes('back') || 
+                        label.includes('rear') || 
+                        label.includes('environment') ||
+                        label.includes('2') || // Sometimes "camera2" is back
+                        label.includes('1')) { // Sometimes "camera1" is back
+                        
+                        selectedCamera = camera;
+                        cameraType = 'Back';
+                        console.log("Found back camera:", camera.label);
+                        break;
+                    }
+                }
+                
+                // If multiple cameras and we didn't find a specific back camera,
+                // try to use the last camera (often the back camera)
+                if (cameras.length > 1 && cameraType === 'Default') {
+                    selectedCamera = cameras[cameras.length - 1];
+                    cameraType = 'Back (assumed)';
+                    console.log("Using last camera as back camera:", selectedCamera.label);
+                }
+                
+                currentCameraId = selectedCamera.id;
+                
+                // Show camera info
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    `Using ${cameraType} camera: ${selectedCamera.label || 'Unknown'}`;
+                
+                // Create camera selection dropdown if multiple cameras
+                if (cameras.length > 1) {
+                    showCameraSelector(cameras, selectedCamera);
+                }
+                
+                // Try to start with back camera preference first
+                const qrConfig = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 }
+                };
+                
+                // Method 1: Try to use facingMode for back camera
+                try {
                     await html5QrCode.start(
-                        cameraId,
-                        {
-                            fps: 10,
-                            qrbox: { width: 250, height: 250 }
-                        },
+                        { facingMode: "environment" }, // Try back camera
+                        qrConfig,
                         onScanSuccess,
                         onScanFailure
                     );
+                    cameraType = 'Back (environment mode)';
+                } catch (facingModeErr) {
+                    console.log("facingMode failed, trying specific camera ID:", facingModeErr);
                     
-                    // Update buttons
-                    startBtn.disabled = true;
-                    stopBtn.disabled = false;
-                    startBtn.innerHTML = '<i class="fas fa-sync fa-spin"></i> Scanning...';
-                    
-                } else {
-                    alert('No camera found. Please connect a camera or use upload option.');
+                    // Method 2: Use specific camera ID
+                    await html5QrCode.start(
+                        selectedCamera.id,
+                        qrConfig,
+                        onScanSuccess,
+                        onScanFailure
+                    );
                 }
+                
+                // Update buttons
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-sync fa-spin"></i> Scanning...';
+                
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    `✓ Active: ${cameraType} camera - Point at QR code`;
+                
             } catch (err) {
                 console.error("Camera error:", err);
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    '❌ Camera error: ' + err.message;
                 alert('Failed to start camera: ' + err.message);
+                
+                // Hide camera status after error
+                setTimeout(() => {
+                    cameraStatus.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        function showCameraSelector(cameras, currentCamera) {
+            const container = document.getElementById('camera-selector-container');
+            
+            let html = `
+                <div style="margin: 15px 0; padding: 15px; background: #f0f8ff; border-radius: 8px;">
+                    <h4 style="margin: 0 0 10px 0;">
+                        <i class="fas fa-camera-retro"></i> Camera Selection
+                    </h4>
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+                        <select id="camera-switch" style="padding: 8px 12px; border-radius: 5px; border: 1px solid #667eea;">
+            `;
+            
+            cameras.forEach((camera, index) => {
+                const isSelected = camera.id === currentCamera.id;
+                const label = camera.label || `Camera ${index + 1}`;
+                const isBackCamera = label.toLowerCase().includes('back') || 
+                                     label.toLowerCase().includes('rear') ||
+                                     label.toLowerCase().includes('environment');
+                
+                html += `<option value="${camera.id}" ${isSelected ? 'selected' : ''}>
+                            ${isBackCamera ? '📷 ' : '📱 '}${label}
+                         </option>`;
+            });
+            
+            html += `
+                        </select>
+                        <button onclick="switchCamera()" class="btn" style="padding: 8px 15px;">
+                            <i class="fas fa-sync-alt"></i> Switch Camera
+                        </button>
+                    </div>
+                    <p style="margin: 10px 0 0 0; font-size: 13px; color: #666;">
+                        <i class="fas fa-info-circle"></i> Select "Back" or "Rear" camera for best QR scanning
+                    </p>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+        
+        async function switchCamera() {
+            const cameraSelect = document.getElementById('camera-switch');
+            const selectedCameraId = cameraSelect.value;
+            const selectedLabel = cameraSelect.options[cameraSelect.selectedIndex].text;
+            const cameraStatus = document.getElementById('camera-status');
+            
+            // Stop current scanner
+            await html5QrCode.stop();
+            
+            cameraStatus.querySelector('#camera-text').textContent = 
+                `Switching to ${selectedLabel}...`;
+            
+            // Start with new camera
+            try {
+                await html5QrCode.start(
+                    selectedCameraId,
+                    {
+                        fps: 10,
+                        qrbox: { width: 250, height: 250 }
+                    },
+                    onScanSuccess,
+                    onScanFailure
+                );
+                
+                currentCameraId = selectedCameraId;
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    `✓ Switched to: ${selectedLabel} - Point at QR code`;
+                
+                console.log("Successfully switched to camera:", selectedLabel);
+                
+            } catch (err) {
+                console.error("Failed to switch camera:", err);
+                cameraStatus.querySelector('#camera-text').textContent = 
+                    '❌ Failed to switch camera: ' + err.message;
+                
+                // Try to restart with previous camera
+                setTimeout(async () => {
+                    try {
+                        await html5QrCode.start(
+                            currentCameraId,
+                            {
+                                fps: 10,
+                                qrbox: { width: 250, height: 250 }
+                            },
+                            onScanSuccess,
+                            onScanFailure
+                        );
+                        cameraStatus.querySelector('#camera-text').textContent = 
+                            '✓ Restarted with previous camera';
+                    } catch (restartErr) {
+                        cameraStatus.querySelector('#camera-text').textContent = 
+                            '❌ Camera stopped. Please restart.';
+                        document.getElementById('start-scanner').disabled = false;
+                        document.getElementById('stop-scanner').disabled = true;
+                        document.getElementById('start-scanner').innerHTML = '<i class="fas fa-play"></i> Start Camera';
+                    }
+                }, 1000);
             }
         }
         
@@ -203,7 +388,9 @@
             html5QrCode.stop().then(() => {
                 document.getElementById('start-scanner').disabled = false;
                 document.getElementById('stop-scanner').disabled = true;
-                document.getElementById('start-scanner').innerHTML = '<i class="fas fa-play"></i> Start Camera';
+                document.getElementById('start-scanner').innerHTML = '<i class="fas fa-play"></i> Start Camera (Back Camera)';
+                document.getElementById('camera-status').style.display = 'none';
+                document.getElementById('camera-selector-container').innerHTML = '';
             }).catch(err => {
                 console.error("Stop error:", err);
             });
@@ -217,9 +404,6 @@
             
             // Process the scanned content
             await processScannedContent(decodedText);
-            
-            // Optional: Stop scanner after successful scan
-            // stopScanner();
         }
         
         function onScanFailure(error) {
