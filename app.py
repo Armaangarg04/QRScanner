@@ -1,110 +1,96 @@
-import os
-import re
-from flask import Flask, send_from_directory, jsonify, request
+from flask import Flask, render_template, request, jsonify, send_file
 import qrcode
+from io import BytesIO
 import base64
-import io
-from urllib.parse import urlparse
+import os
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+app = Flask(__name__)
 
-# Serve HTML files
 @app.route('/')
-def serve_index():
-    return send_from_directory('.', 'index.html')
+def home():
+    return render_template('index.html')  # Your main page
 
-@app.route('/<page>.html')
-def serve_page(page):
-    return send_from_directory('.', f'{page}.html')
+@app.route('/qr-generator')
+def qr_generator_page():
+    return render_template('qr_generator.html')  # The HTML above
 
-# API endpoint for QR generation (using SVG - no Pillow needed)
 @app.route('/api/generate-qr', methods=['POST'])
 def generate_qr():
     try:
-        data = request.json
-        text = data.get('text', 'Test QR')
+        data = request.get_json()
         
-        # Generate QR code as SVG (no Pillow needed)
-        import qrcode.image.svg
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
         
-        # Create SVG factory
-        factory = qrcode.image.svg.SvgPathImage
-        qr = qrcode.make(text, image_factory=factory)
+        text = data.get('text', '').strip()
         
-        # Get SVG as string
-        stream = io.BytesIO()
-        qr.save(stream)
-        svg_string = stream.getvalue().decode('utf-8')
+        if not text:
+            return jsonify({'success': False, 'error': 'Text is empty'}), 400
+        
+        print(f"Generating QR code for: {text[:50]}...")
+        
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(text)
+        qr.make(fit=True)
+        
+        # Create QR code image
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Save image to bytes
+        img_bytes = BytesIO()
+        img.save(img_bytes, format='PNG')
+        img_bytes.seek(0)
+        
+        # Convert to base64 for embedding in HTML
+        img_base64 = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
+        
+        # Generate ASCII QR (simplified version)
+        ascii_qr = generate_ascii_qr(text)
         
         return jsonify({
-            "success": True,
-            "qr_code": svg_string,
-            "format": "svg",
-            "text": text
+            'success': True,
+            'text': text,
+            'qr_image_url': f'data:image/png;base64,{img_base64}',
+            'ascii_qr': ascii_qr,
+            'message': 'QR code generated successfully'
         })
+        
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Error generating QR: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to generate QR code'
+        }), 500
 
-# URL Security Analysis API (YOUR CODE)
-@app.route('/api/check-url', methods=['POST'])
-def check_url():
+def generate_ascii_qr(text, width=40):
+    """Generate a simple ASCII representation of QR code"""
     try:
-        data = request.json
-        url = data.get('url', '')
+        # For simplicity, create a basic ASCII representation
+        # In reality, you'd use a proper ASCII QR generator
+        lines = []
+        lines.append("┌" + "─" * width + "┐")
         
-        if not url:
-            return jsonify({"error": "No URL provided"}), 400
+        # Add text in the middle
+        padding = (width - len(text)) // 2
+        if padding > 0:
+            lines.append("│" + " " * padding + text + " " * (width - padding - len(text)) + "│")
+        else:
+            # Text too long, wrap it
+            for i in range(0, len(text), width):
+                chunk = text[i:i+width]
+                lines.append("│" + chunk.ljust(width) + "│")
         
-        # Parse the URL
-        parsed = urlparse(url)
-        domain = parsed.netloc
-        
-        # Basic security checks
-        suspicious_keywords = ['free', 'download', 'claim', 'won', 'bank', 'password', 'login', 'verify']
-        suspicious_patterns = [
-            r'\d{16}',  # Credit card numbers
-            r'bit\.ly|goo\.gl|tinyurl',  # URL shorteners
-        ]
-        
-        # Check for suspicious content
-        is_suspicious = False
-        reasons = []
-        
-        # Check domain length (very short domains can be suspicious)
-        if len(domain) < 5:
-            is_suspicious = True
-            reasons.append("Very short domain name")
-        
-        # Check for keywords
-        url_lower = url.lower()
-        for keyword in suspicious_keywords:
-            if keyword in url_lower:
-                is_suspicious = True
-                reasons.append(f"Contains suspicious keyword: '{keyword}'")
-                break
-        
-        # Check for patterns
-        for pattern in suspicious_patterns:
-            if re.search(pattern, url, re.IGNORECASE):
-                is_suspicious = True
-                reasons.append("Matches suspicious pattern")
-                break
-        
-        # Calculate risk score (simple example)
-        risk_score = 0.7 if is_suspicious else 0.1
-        
-        return jsonify({
-            "url": url,
-            "domain": domain,
-            "suspicious": is_suspicious,
-            "warning": "⚠️ This URL appears suspicious. Reasons: " + ", ".join(reasons) if is_suspicious else "✅ This URL appears safe",
-            "domain_prob": risk_score,
-            "reasons": reasons if is_suspicious else []
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        lines.append("└" + "─" * width + "┘")
+        return "\n".join(lines)
+    except:
+        return "QR Code (ASCII preview not available)"
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True, port=5000)
