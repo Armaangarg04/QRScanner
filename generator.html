@@ -6,6 +6,7 @@
         body { font-family: Arial; padding: 20px; text-align: center; }
         .btn { padding: 10px 20px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; }
         textarea { width: 80%; height: 100px; margin: 20px 0; padding: 10px; }
+        .ascii-qr { font-family: monospace; background: #f5f5f5; padding: 10px; border-radius: 5px; }
     </style>
 </head>
 <body>
@@ -39,15 +40,18 @@
                 const data = await response.json();
                 if (data.success) {
                     document.getElementById('qr-result').innerHTML = `
-                        <h3>Your QR Code:</h3>
-                        <img src="${data.qr_code}" style="max-width: 200px; border: 1px solid #ccc;">
-                        <p><small>Right-click to save image</small></p>
+                        <h3>Your QR Code (Text Preview):</h3>
+                        <div class="ascii-qr">
+                            <pre>${data.ascii_qr}</pre>
+                        </div>
+                        <p><strong>Content:</strong> ${data.text}</p>
+                        <p><small>${data.message}</small></p>
                     `;
                 } else {
                     alert('Error: ' + (data.error || 'Unknown error'));
                 }
             } catch (error) {
-                alert('Failed to generate QR code');
+                alert('Failed to generate QR code: ' + error.message);
             }
         }
     </script>
