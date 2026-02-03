@@ -417,40 +417,165 @@
             event.target.value = '';
         }
         
-        // Process scanned result
-        function processScannedResult(decodedText) {
+        // Function to check URL security via your Flask API
+        async function checkURLWithAPI(url) {
+            try {
+                const response = await fetch('/api/check-url', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error('API Error:', error);
+                return {
+                    suspicious: false,
+                    warning: "⚠️ Could not check URL security",
+                    domain_prob: 0.5,
+                    reasons: ["API connection failed"]
+                };
+            }
+        }
+        
+        // Process scanned result - UPDATED VERSION
+        async function processScannedResult(decodedText) {
             document.getElementById('status').textContent = "✅ QR Code detected!";
             
             // Show result
             const resultDiv = document.getElementById('result');
             resultDiv.style.display = 'block';
             
+            // Show loading
+            resultDiv.innerHTML = `
+                <div style="text-align: center;">
+                    🔍 Scanning QR content...<br>
+                    <small>${decodedText.substring(0, 50)}${decodedText.length > 50 ? '...' : ''}</small>
+                </div>
+            `;
+            
             // Check if it's a URL
             if (decodedText.startsWith('http://') || decodedText.startsWith('https://') || 
                 decodedText.startsWith('upi://') || decodedText.includes('://')) {
                 
-                resultDiv.innerHTML = `
-                    <strong>📱 QR Content:</strong><br>
-                    <small>${decodedText}</small><br><br>
-                    <a href="${decodedText}" target="_blank" onclick="openLink('${decodedText}')">
-                        🔗 Click to Open Link
-                    </a>
-                `;
-                
-                // Auto-open after 1 second
-                setTimeout(() => {
-                    window.open(decodedText, '_blank');
-                }, 1000);
+                try {
+                    // Call your Flask API for security check
+                    resultDiv.innerHTML = `<div style="text-align: center;">🔒 Checking URL security...</div>`;
+                    
+                    const securityResult = await checkURLWithAPI(decodedText);
+                    
+                    let securityHTML = '';
+                    let buttonColor = '#4CAF50';
+                    
+                    if (securityResult.suspicious) {
+                        securityHTML = `
+                            <div style="background: rgba(255, 193, 7, 0.2); color: #ff9800; padding: 12px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #ff9800;">
+                                <strong>⚠️ SECURITY WARNING</strong><br>
+                                ${securityResult.warning}<br>
+                                <small style="opacity: 0.8;">Risk score: ${(securityResult.domain_prob * 100).toFixed(0)}%</small>
+                            </div>
+                        `;
+                        buttonColor = '#ff9800';
+                    } else {
+                        securityHTML = `
+                            <div style="background: rgba(76, 175, 80, 0.2); color: #4CAF50; padding: 12px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #4CAF50;">
+                                <strong>✅ URL APPEARS SAFE</strong><br>
+                                ${securityResult.warning}<br>
+                                <small style="opacity: 0.8;">Risk score: ${(securityResult.domain_prob * 100).toFixed(0)}%</small>
+                            </div>
+                        `;
+                    }
+                    
+                    // Show details button if suspicious
+                    let detailsButton = '';
+                    if (securityResult.suspicious && securityResult.reasons && securityResult.reasons.length > 0) {
+                        detailsButton = `
+                            <button onclick="showSecurityDetails(${JSON.stringify(securityResult)})" 
+                                    style="background: #6c757d; padding: 8px 16px; border-radius: 5px; border: none; color: white; margin: 5px; font-size: 14px;">
+                                🔍 Show Security Details
+                            </button>
+                        `;
+                    }
+                    
+                    resultDiv.innerHTML = `
+                        ${securityHTML}
+                        <div style="margin: 15px 0;">
+                            <strong>📱 Scanned Content:</strong><br>
+                            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 14px;">
+                                ${decodedText}
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px;">
+                            <a href="${decodedText}" target="_blank" 
+                               onclick="return confirmOpen('${decodedText.replace(/'/g, "\\'")}', ${securityResult.suspicious})"
+                               style="background: ${buttonColor}; color: white; padding: 12px 24px; border-radius: 5px; text-decoration: none; display: inline-block; margin: 5px;">
+                                🔗 Open Link
+                            </a>
+                            
+                            ${detailsButton}
+                            
+                            <button onclick="copyToClipboard('${decodedText.replace(/'/g, "\\'")}')" 
+                                    style="background: #2196F3; padding: 12px 24px; border-radius: 5px; border: none; color: white; margin: 5px;">
+                                📋 Copy URL
+                            </button>
+                        </div>
+                    `;
+                    
+                } catch (error) {
+                    // Fallback if API fails
+                    console.error("Security check failed:", error);
+                    resultDiv.innerHTML = `
+                        <div style="background: rgba(244, 67, 54, 0.2); color: #f44336; padding: 12px; margin: 10px 0; border-radius: 8px;">
+                            <strong>⚠️ Security Check Unavailable</strong><br>
+                            Could not verify URL security
+                        </div>
+                        
+                        <div style="margin: 15px 0;">
+                            <strong>📱 Scanned Content:</strong><br>
+                            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 14px;">
+                                ${decodedText}
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px;">
+                            <a href="${decodedText}" target="_blank" 
+                               style="background: #4CAF50; color: white; padding: 12px 24px; border-radius: 5px; text-decoration: none; display: inline-block; margin: 5px;">
+                                🔗 Open Link
+                            </a>
+                            
+                            <button onclick="copyToClipboard('${decodedText.replace(/'/g, "\\'")}')" 
+                                    style="background: #2196F3; padding: 12px 24px; border-radius: 5px; border: none; color: white; margin: 5px;">
+                                📋 Copy URL
+                            </button>
+                        </div>
+                    `;
+                }
                 
             } else {
                 // For non-URL QR codes
                 resultDiv.innerHTML = `
-                    <strong>📝 QR Text:</strong><br>
-                    ${decodedText}<br><br>
-                    <button onclick="copyToClipboard('${decodedText.replace(/'/g, "\\'")}')" 
-                            style="background: #2196F3; padding: 8px 16px; border-radius: 5px; border: none; color: white;">
-                        📋 Copy Text
-                    </button>
+                    <div style="margin: 15px 0;">
+                        <strong>📝 Text Content:</strong><br>
+                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin: 15px 0; font-size: 16px; line-height: 1.5;">
+                            ${decodedText}
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 20px;">
+                        <button onclick="copyToClipboard('${decodedText.replace(/'/g, "\\'")}')" 
+                                style="background: #4CAF50; padding: 12px 24px; border-radius: 5px; border: none; color: white; margin: 5px; font-size: 16px;">
+                            📋 Copy Text
+                        </button>
+                        
+                        <button onclick="speakText('${decodedText.replace(/'/g, "\\'")}')" 
+                                style="background: #9C27B0; padding: 12px 24px; border-radius: 5px; border: none; color: white; margin: 5px; font-size: 16px;">
+                            🔊 Speak Text
+                        </button>
+                    </div>
                 `;
             }
         }
@@ -487,20 +612,76 @@
             }
         }
         
-        // Open link function
-        function openLink(url) {
+        // Helper functions
+        function confirmOpen(url, isSuspicious) {
+            if (isSuspicious) {
+                const confirmed = confirm("⚠️ SECURITY WARNING!\n\nThis URL appears suspicious.\n\nAre you sure you want to open it?");
+                if (!confirmed) return false;
+            }
             window.open(url, '_blank');
             return false;
+        }
+        
+        function showSecurityDetails(result) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: #1a1a1a; padding: 25px; border-radius: 12px; max-width: 500px; width: 90%; border: 2px solid ${result.suspicious ? '#ff9800' : '#4CAF50'};">
+                    <h3 style="color: ${result.suspicious ? '#ff9800' : '#4CAF50'}; margin-bottom: 15px;">
+                        🔍 Security Analysis
+                    </h3>
+                    <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; margin: 10px 0; font-family: monospace; font-size: 13px; line-height: 1.6;">
+                        <strong>URL:</strong> ${result.url}<br>
+                        <strong>Domain:</strong> ${result.domain}<br>
+                        <strong>Risk Score:</strong> ${(result.domain_prob * 100).toFixed(0)}%<br>
+                        <strong>Status:</strong> ${result.suspicious ? '<span style="color: #ff9800">SUSPICIOUS ⚠️</span>' : '<span style="color: #4CAF50">SAFE ✅</span>'}<br><br>
+                        <strong>Issues Found:</strong><br>
+                        ${result.reasons.map((reason, i) => `${i+1}. ${reason}`).join('<br>') || 'None'}
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" 
+                            style="background: #f44336; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin-top: 15px; cursor: pointer;">
+                        Close
+                    </button>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+        }
+        
+        // Text-to-speech function
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                speechSynthesis.speak(utterance);
+            } else {
+                alert('Text-to-speech not supported in this browser');
+            }
         }
         
         // Copy to clipboard
         function copyToClipboard(text) {
             navigator.clipboard.writeText(text)
                 .then(() => {
-                    alert('Copied to clipboard!');
+                    showMessage('✅ Copied to clipboard!', 'success');
                 })
                 .catch(err => {
                     console.error('Copy failed:', err);
+                    showMessage('❌ Failed to copy', 'error');
                 });
         }
         
@@ -508,7 +689,6 @@
         async function testWithSampleQR() {
             console.log("Testing with sample QR...");
             
-            // You can test with a sample QR image URL
             const sampleQRUrl = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://www.example.com";
             
             try {
@@ -516,7 +696,6 @@
                 const blob = await response.blob();
                 const file = new File([blob], "sample-qr.png", { type: "image/png" });
                 
-                // Simulate file upload
                 const event = {
                     target: {
                         files: [file]
