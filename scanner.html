@@ -1,15 +1,347 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>QR Scanner</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: Arial; padding: 20px; text-align: center; }
-        .btn { padding: 10px 20px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; }
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .scanner-container {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 10px;
+        }
+        #qr-reader {
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            margin: 10px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn:hover {
+            background: #764ba2;
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        .url-display {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border: 1px solid #ffeaa7;
+        }
+        .safe {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border: 1px solid #c3e6cb;
+        }
     </style>
+    <!-- Include QR scanner library -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
-    <h1>📷 QR Code Scanner</h1>
-    <p>Camera-based QR code scanner</p>
-    <p><a href="/" class="btn">← Back to Home</a></p>
+    <div class="header">
+        <h1><i class="fas fa-camera"></i> QR Code Scanner</h1>
+        <p>Scan QR codes using your camera or upload images</p>
+    </div>
+    
+    <a href="/" class="btn"><i class="fas fa-arrow-left"></i> Back to Home</a>
+    
+    <div class="scanner-container">
+        <h2><i class="fas fa-video"></i> Live Camera Scanner</h2>
+        <div id="qr-reader"></div>
+        
+        <div style="margin: 20px 0;">
+            <button id="start-scanner" class="btn">
+                <i class="fas fa-play"></i> Start Camera
+            </button>
+            <button id="stop-scanner" class="btn btn-secondary" disabled>
+                <i class="fas fa-stop"></i> Stop Camera
+            </button>
+            <button id="upload-image" class="btn">
+                <i class="fas fa-upload"></i> Upload Image
+            </button>
+            <input type="file" id="file-input" accept="image/*" style="display: none;">
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <h3><i class="fas fa-keyboard"></i> Or Enter QR Content Manually</h3>
+            <textarea id="manual-input" placeholder="Paste QR code content here..." 
+                     style="width: 80%; height: 100px; padding: 10px; margin: 10px 0;"></textarea>
+            <br>
+            <button onclick="checkManualInput()" class="btn">
+                <i class="fas fa-search"></i> Analyze Content
+            </button>
+        </div>
+    </div>
+    
+    <div class="results" id="scan-results" style="display: none;">
+        <h2><i class="fas fa-search"></i> Scan Results</h2>
+        <div id="result-content"></div>
+    </div>
+    
+    <div style="margin-top: 30px; padding: 20px; background: #e8f4f8; border-radius: 10px;">
+        <h3><i class="fas fa-info-circle"></i> How to Use</h3>
+        <ol style="text-align: left; display: inline-block;">
+            <li>Click "Start Camera" and allow camera access</li>
+            <li>Point camera at QR code</li>
+            <li>Scanner will automatically detect QR codes</li>
+            <li>Or upload an image containing QR code</li>
+            <li>Results will show security analysis</li>
+        </ol>
+    </div>
+
+    <script>
+        let html5QrCode;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            html5QrCode = new Html5Qrcode("qr-reader");
+            
+            // Start scanner button
+            document.getElementById('start-scanner').addEventListener('click', startScanner);
+            
+            // Stop scanner button
+            document.getElementById('stop-scanner').addEventListener('click', stopScanner);
+            
+            // Upload image button
+            document.getElementById('upload-image').addEventListener('click', () => {
+                document.getElementById('file-input').click();
+            });
+            
+            // File input change
+            document.getElementById('file-input').addEventListener('change', handleImageUpload);
+        });
+        
+        async function startScanner() {
+            const startBtn = document.getElementById('start-scanner');
+            const stopBtn = document.getElementById('stop-scanner');
+            
+            try {
+                // Get available cameras
+                const cameras = await Html5Qrcode.getCameras();
+                if (cameras && cameras.length) {
+                    const cameraId = cameras[0].id;
+                    
+                    // Start scanning
+                    await html5QrCode.start(
+                        cameraId,
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 250 }
+                        },
+                        onScanSuccess,
+                        onScanFailure
+                    );
+                    
+                    // Update buttons
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    startBtn.innerHTML = '<i class="fas fa-sync fa-spin"></i> Scanning...';
+                    
+                } else {
+                    alert('No camera found. Please connect a camera or use upload option.');
+                }
+            } catch (err) {
+                console.error("Camera error:", err);
+                alert('Failed to start camera: ' + err.message);
+            }
+        }
+        
+        function stopScanner() {
+            html5QrCode.stop().then(() => {
+                document.getElementById('start-scanner').disabled = false;
+                document.getElementById('stop-scanner').disabled = true;
+                document.getElementById('start-scanner').innerHTML = '<i class="fas fa-play"></i> Start Camera';
+            }).catch(err => {
+                console.error("Stop error:", err);
+            });
+        }
+        
+        async function onScanSuccess(decodedText) {
+            console.log("QR Code detected:", decodedText);
+            
+            // Show results section
+            document.getElementById('scan-results').style.display = 'block';
+            
+            // Process the scanned content
+            await processScannedContent(decodedText);
+            
+            // Optional: Stop scanner after successful scan
+            // stopScanner();
+        }
+        
+        function onScanFailure(error) {
+            // Usually expected, not always an error
+            // console.log("QR scan failed (expected):", error);
+        }
+        
+        async function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // Use the QR scanner library to decode from image
+            html5QrCode.scanFile(file, true)
+                .then(decodedText => {
+                    onScanSuccess(decodedText);
+                    event.target.value = ''; // Clear input
+                })
+                .catch(err => {
+                    console.error("Image scan error:", err);
+                    alert('Could not read QR code from image. Please ensure it contains a valid QR code.');
+                });
+        }
+        
+        async function processScannedContent(text) {
+            const resultsDiv = document.getElementById('result-content');
+            
+            // Check if it's a URL
+            const isUrl = text.startsWith('http://') || text.startsWith('https://');
+            
+            if (isUrl) {
+                resultsDiv.innerHTML = `
+                    <div class="url-display">
+                        <strong>URL Detected:</strong><br>
+                        ${text}
+                    </div>
+                    <div id="url-analysis">
+                        <div class="warning">
+                            <i class="fas fa-spinner fa-spin"></i> Analyzing URL for security threats...
+                        </div>
+                    </div>
+                `;
+                
+                // Analyze the URL (call your Flask API)
+                try {
+                    const response = await fetch('/api/check-url', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ url: text })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    // Update with analysis results
+                    document.getElementById('url-analysis').innerHTML = `
+                        <div class="${data.suspicious ? 'warning' : 'safe'}">
+                            <i class="fas ${data.suspicious ? 'fa-exclamation-triangle' : 'fa-check-circle'}"></i>
+                            <strong>${data.suspicious ? '⚠️ SUSPICIOUS URL' : '✅ SAFE URL'}</strong>
+                            <p>${data.warning || 'No issues detected'}</p>
+                            ${!data.suspicious ? `
+                            <p><a href="${text}" target="_blank" class="btn" style="margin-top: 10px;">
+                                <i class="fas fa-external-link-alt"></i> Open Website
+                            </a></p>
+                            ` : ''}
+                        </div>
+                        <div style="margin-top: 20px;">
+                            <h4>Analysis Details:</h4>
+                            <p><strong>Domain:</strong> ${data.domain || 'Unknown'}</p>
+                            <p><strong>Risk Score:</strong> ${((data.domain_prob || 0) * 100).toFixed(1)}%</p>
+                        </div>
+                    `;
+                    
+                } catch (error) {
+                    document.getElementById('url-analysis').innerHTML = `
+                        <div class="warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <strong>Analysis Failed</strong>
+                            <p>Could not analyze URL: ${error.message}</p>
+                            <p><a href="${text}" target="_blank" class="btn" style="margin-top: 10px;">
+                                <i class="fas fa-external-link-alt"></i> Open URL (Caution)
+                            </a></p>
+                        </div>
+                    `;
+                }
+                
+            } else {
+                // Not a URL - plain text
+                resultsDiv.innerHTML = `
+                    <div class="url-display">
+                        <strong>Text Content:</strong><br>
+                        ${text}
+                    </div>
+                    <div class="safe">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Plain Text QR Code</strong>
+                        <p>This QR contains text, not a website URL.</p>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <button onclick="copyToClipboard('${text.replace(/'/g, "\\'")}')" class="btn">
+                            <i class="fas fa-copy"></i> Copy Text
+                        </button>
+                    </div>
+                `;
+            }
+        }
+        
+        function checkManualInput() {
+            const text = document.getElementById('manual-input').value.trim();
+            if (text) {
+                document.getElementById('scan-results').style.display = 'block';
+                processScannedContent(text);
+            } else {
+                alert('Please enter some text to analyze');
+            }
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+    </script>
 </body>
 </html>
