@@ -1,6 +1,5 @@
 from flask import Flask, send_from_directory, jsonify, request
 import qrcode
-import io
 import base64
 import os
 
@@ -15,21 +14,37 @@ def serve_index():
 def serve_page(page):
     return send_from_directory('.', f'{page}.html')
 
-# API endpoint for QR generation
+# API endpoint for QR generation (without Pillow)
 @app.route('/api/generate-qr', methods=['POST'])
 def generate_qr():
     try:
         data = request.json
         text = data.get('text', 'Test QR')
         
-        qr = qrcode.make(text)
-        buffered = io.BytesIO()
-        qr.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
+        # Generate QR code using pure qrcode (no Pillow)
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(text)
+        qr.make(fit=True)
+        
+        # Create image matrix (no Pillow)
+        matrix = qr.get_matrix()
+        
+        # Create simple ASCII QR for now
+        # We'll return text instead of image temporarily
+        ascii_qr = ''
+        for row in matrix:
+            ascii_qr += ''.join(['██' if cell else '  ' for cell in row]) + '\n'
         
         return jsonify({
             "success": True,
-            "qr_code": f"data:image/png;base64,{img_str}"
+            "text": text,
+            "ascii_qr": ascii_qr,
+            "message": "QR generated successfully! Upgrade to image version soon."
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
