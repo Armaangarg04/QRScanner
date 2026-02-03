@@ -1,7 +1,50 @@
+import os
 import re
+from flask import Flask, send_from_directory, jsonify, request
+import qrcode
+import io
 from urllib.parse import urlparse
 
-# Add this route to your existing app.py
+app = Flask(__name__, static_folder='.', static_url_path='')
+
+# Serve HTML files
+@app.route('/')
+def serve_index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<page>.html')
+def serve_page(page):
+    return send_from_directory('.', f'{page}.html')
+
+# API endpoint for QR generation (SVG - no Pillow)
+@app.route('/api/generate-qr', methods=['POST'])
+def generate_qr():
+    try:
+        data = request.json
+        text = data.get('text', '')
+        
+        if not text:
+            return jsonify({"error": "No text provided"}), 400
+        
+        # Generate QR code as SVG (no Pillow needed)
+        factory = qrcode.image.svg.SvgPathImage
+        qr = qrcode.make(text, image_factory=factory)
+        
+        # Get SVG as string
+        stream = io.BytesIO()
+        qr.save(stream)
+        svg_string = stream.getvalue().decode('utf-8')
+        
+        return jsonify({
+            "success": True,
+            "qr_code": svg_string,
+            "format": "svg",
+            "text": text
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# URL Security Analysis API
 @app.route('/api/check-url', methods=['POST'])
 def check_url():
     try:
@@ -16,10 +59,11 @@ def check_url():
         domain = parsed.netloc
         
         # Basic security checks
-        suspicious_keywords = ['free', 'download', 'claim', 'won', 'bank', 'password', 'login', 'verify']
+        suspicious_keywords = ['free', 'download', 'claim', 'won', 'bank', 'password', 'login', 'verify', 'reward', 'prize']
         suspicious_patterns = [
             r'\d{16}',  # Credit card numbers
-            r'bit\.ly|goo\.gl|tinyurl',  # URL shorteners
+            r'bit\.ly|goo\.gl|tinyurl|short\.ly|ow\.ly|is\.gd',  # URL shorteners
+            r'(?:\d{1,3}\.){3}\d{1,3}',  # IP addresses
         ]
         
         # Check for suspicious content
@@ -30,6 +74,14 @@ def check_url():
         if len(domain) < 5:
             is_suspicious = True
             reasons.append("Very short domain name")
+        
+        # Check for suspicious TLDs
+        suspicious_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top']
+        for tld in suspicious_tlds:
+            if domain.endswith(tld):
+                is_suspicious = True
+                reasons.append(f"Suspicious TLD: {tld}")
+                break
         
         # Check for keywords
         url_lower = url.lower()
@@ -46,8 +98,15 @@ def check_url():
                 reasons.append("Matches suspicious pattern")
                 break
         
-        # Calculate risk score (simple example)
-        risk_score = 0.7 if is_suspicious else 0.1
+        # Check for too many subdomains
+        if domain.count('.') > 3:
+            is_suspicious = True
+            reasons.append("Too many subdomains")
+        
+        # Calculate risk score
+        risk_score = 0.1  # Base safe score
+        if is_suspicious:
+            risk_score = min(0.9, 0.1 + (len(reasons) * 0.2))
         
         return jsonify({
             "url": url,
@@ -60,3 +119,7 @@ def check_url():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
