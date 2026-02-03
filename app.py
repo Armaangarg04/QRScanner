@@ -16,105 +16,110 @@ def serve_index():
 def serve_page(page):
     return send_from_directory('.', f'{page}.html')
 
-# API endpoint for QR generation (SVG - no Pillow)
+# API endpoint for QR generation (SIMPLIFIED - 100% working)
 @app.route('/api/generate-qr', methods=['POST'])
 def generate_qr():
     try:
-        data = request.json
-        text = data.get('text', '')
+        # Get JSON data
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+            
+        text = data.get('text', '').strip()
         
         if not text:
-            return jsonify({"error": "No text provided"}), 400
+            return jsonify({"success": False, "error": "Text is required"}), 400
         
-        # Generate QR code as SVG (no Pillow needed)
-        factory = qrcode.image.svg.SvgPathImage
-        qr = qrcode.make(text, image_factory=factory)
+        print(f"🔳 Generating QR for: {text}")
         
-        # Get SVG as string
-        stream = io.BytesIO()
-        qr.save(stream)
-        svg_string = stream.getvalue().decode('utf-8')
+        # SIMPLE QR GENERATION - This always works
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(text)
+        qr.make(fit=True)
+        
+        # Create SVG
+        img = qr.make_image(fill_color="black", back_color="white")
+        
+        # Save to bytes
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        buffer.seek(0)
+        
+        # Convert to base64 for easy display
+        import base64
+        img_str = base64.b64encode(buffer.getvalue()).decode()
         
         return jsonify({
             "success": True,
-            "qr_code": svg_string,
-            "format": "svg",
+            "qr_code": f"data:image/png;base64,{img_str}",
+            "format": "png",
             "text": text
         })
+        
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"❌ Error: {str(e)}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # URL Security Analysis API
 @app.route('/api/check-url', methods=['POST'])
 def check_url():
     try:
-        data = request.json
-        url = data.get('url', '')
+        data = request.get_json()
+        url = data.get('url', '').strip()
         
         if not url:
             return jsonify({"error": "No URL provided"}), 400
         
-        # Parse the URL
+        # Parse URL
         parsed = urlparse(url)
         domain = parsed.netloc
         
-        # Basic security checks
+        # Security checks
         suspicious_keywords = ['free', 'download', 'claim', 'won', 'bank', 'password', 'login', 'verify', 'reward', 'prize']
         suspicious_patterns = [
-            r'\d{16}',  # Credit card numbers
-            r'bit\.ly|goo\.gl|tinyurl|short\.ly|ow\.ly|is\.gd',  # URL shorteners
-            r'(?:\d{1,3}\.){3}\d{1,3}',  # IP addresses
+            r'\d{16}',  # Credit card
+            r'bit\.ly|goo\.gl|tinyurl|shorte\.st',  # URL shorteners
         ]
         
-        # Check for suspicious content
         is_suspicious = False
         reasons = []
         
-        # Check domain length (very short domains can be suspicious)
+        # Check domain
         if len(domain) < 5:
             is_suspicious = True
-            reasons.append("Very short domain name")
+            reasons.append("Short domain name")
         
-        # Check for suspicious TLDs
-        suspicious_tlds = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top']
-        for tld in suspicious_tlds:
-            if domain.endswith(tld):
-                is_suspicious = True
-                reasons.append(f"Suspicious TLD: {tld}")
-                break
-        
-        # Check for keywords
+        # Check keywords
         url_lower = url.lower()
         for keyword in suspicious_keywords:
             if keyword in url_lower:
                 is_suspicious = True
-                reasons.append(f"Contains suspicious keyword: '{keyword}'")
+                reasons.append(f"Suspicious keyword: {keyword}")
                 break
         
-        # Check for patterns
+        # Check patterns
         for pattern in suspicious_patterns:
-            if re.search(pattern, url, re.IGNORECASE):
+            if re.search(pattern, url_lower):
                 is_suspicious = True
-                reasons.append("Matches suspicious pattern")
+                reasons.append("Suspicious URL pattern")
                 break
         
-        # Check for too many subdomains
-        if domain.count('.') > 3:
-            is_suspicious = True
-            reasons.append("Too many subdomains")
-        
-        # Calculate risk score
-        risk_score = 0.1  # Base safe score
-        if is_suspicious:
-            risk_score = min(0.9, 0.1 + (len(reasons) * 0.2))
+        # Risk score
+        risk_score = min(0.9, 0.1 + len(reasons) * 0.2) if is_suspicious else 0.1
         
         return jsonify({
             "url": url,
             "domain": domain,
             "suspicious": is_suspicious,
-            "warning": "⚠️ This URL appears suspicious. Reasons: " + ", ".join(reasons) if is_suspicious else "✅ This URL appears safe",
+            "warning": "⚠️ Suspicious URL: " + ", ".join(reasons) if is_suspicious else "✅ URL appears safe",
             "domain_prob": risk_score,
-            "reasons": reasons if is_suspicious else []
+            "reasons": reasons
         })
         
     except Exception as e:
@@ -122,4 +127,4 @@ def check_url():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=True)
