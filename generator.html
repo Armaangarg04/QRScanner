@@ -1,234 +1,65 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>QR Generator</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Generator</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
-        body { 
-            font-family: Arial; 
-            padding: 20px; 
-            text-align: center; 
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .btn { 
-            padding: 12px 24px; 
-            background: #667eea; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        .btn:hover { background: #764ba2; }
-        textarea { 
-            width: 100%; 
-            height: 100px; 
-            margin: 20px 0; 
-            padding: 10px; 
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-        .qr-container { 
-            margin-top: 30px;
-            padding: 20px;
-            background: #f5f5f5;
-            border-radius: 10px;
-        }
-        .ascii-qr { 
-            font-family: monospace; 
-            background: white; 
-            padding: 20px; 
-            border-radius: 5px;
-            border: 1px solid #ddd;
-            overflow-x: auto;
-            margin: 20px 0;
-        }
-        .image-qr {
-            max-width: 300px;
-            margin: 20px auto;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 10px;
-            background: white;
-        }
-        .error { color: #dc3545; background: #f8d7da; padding: 10px; border-radius: 5px; }
-        .success { color: #155724; background: #d4edda; padding: 10px; border-radius: 5px; }
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .container { text-align: center; }
+        textarea { width: 100%; height: 100px; padding: 10px; margin: 10px 0; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+        #qrcode { margin: 20px auto; }
     </style>
 </head>
 <body>
-    <h1>🔳 QR Code Generator</h1>
-    <p>Enter any text or URL to generate a QR code</p>
-    
-    <div>
-        <textarea id="qr-text" placeholder="https://example.com or any text..."></textarea>
-        <br>
-        <button onclick="generateQR()" class="btn">Generate QR Code</button>
-        <button onclick="testExamples()" class="btn" style="background: #28a745;">Test Examples</button>
+    <div class="container">
+        <h1>QR Code Generator</h1>
+        <textarea id="text-input" placeholder="Enter text or URL..."></textarea><br>
+        <button onclick="generateQR()">Generate QR Code</button>
+        <button onclick="downloadQR()" id="download-btn" style="display:none;">Download QR Code</button>
+        <div id="qrcode"></div>
     </div>
-    
-    <div id="qr-result" class="qr-container" style="display: none;">
-        <!-- Results will appear here -->
-    </div>
-    
-    <div id="debug-info" style="margin-top: 20px; font-size: 12px; color: #666; display: none;"></div>
-    
-    <p style="margin-top: 30px;"><a href="/" class="btn">← Back to Home</a></p>
-    
+
     <script>
-        // Debug function to show API responses
-        function showDebug(info) {
-            const debugDiv = document.getElementById('debug-info');
-            debugDiv.innerHTML = `<pre>${JSON.stringify(info, null, 2)}</pre>`;
-            debugDiv.style.display = 'block';
-        }
+        let currentQR = null;
         
-        async function generateQR() {
-            const text = document.getElementById('qr-text').value.trim();
-            const resultDiv = document.getElementById('qr-result');
-            
+        function generateQR() {
+            const text = document.getElementById('text-input').value.trim();
             if (!text) {
-                alert('Please enter some text or a URL');
+                alert('Please enter some text or URL');
                 return;
             }
             
-            resultDiv.innerHTML = '<div class="success"><i class="fas fa-spinner fa-spin"></i> Generating QR code...</div>';
-            resultDiv.style.display = 'block';
+            document.getElementById('qrcode').innerHTML = '';
             
-            try {
-                console.log('Sending request to /api/generate-qr with:', text);
-                
-                const response = await fetch('/api/generate-qr', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({text: text})
-                });
-                
-                console.log('Response status:', response.status);
-                console.log('Response headers:', response.headers);
-                
-                const responseText = await response.text();
-                console.log('Raw response:', responseText);
-                
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (parseError) {
-                    console.error('Failed to parse JSON:', parseError);
-                    showDebug({ 
-                        error: 'Invalid JSON response', 
-                        rawResponse: responseText,
-                        status: response.status 
-                    });
-                    
-                    resultDiv.innerHTML = `
-                        <div class="error">
-                            <h3>❌ Server Error</h3>
-                            <p>Server returned invalid response:</p>
-                            <pre>${responseText.substring(0, 200)}...</pre>
-                            <p><strong>Status:</strong> ${response.status}</p>
-                            <p><small>Check if Flask backend is running</small></p>
-                        </div>
-                    `;
-                    return;
+            QRCode.toCanvas(document.getElementById('qrcode'), text, {
+                width: 300,
+                margin: 2,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
                 }
-                
-                showDebug(data);
-                
-                if (data.success) {
-                    resultDiv.innerHTML = `
-                        <h3>✅ QR Code Generated Successfully</h3>
-                        
-                        ${data.qr_image_url ? `
-                        <div class="image-qr">
-                            <img src="${data.qr_image_url}" alt="QR Code" style="width: 100%;">
-                            <p style="margin-top: 10px;">
-                                <a href="${data.qr_image_url}" download="qrcode.png" class="btn" style="padding: 8px 16px;">
-                                    📥 Download QR Code
-                                </a>
-                            </p>
-                        </div>
-                        ` : ''}
-                        
-                        <div class="ascii-qr">
-                            <h4>ASCII Preview:</h4>
-                            <pre style="font-size: 8px; line-height: 0.8;">${data.ascii_qr || 'No ASCII preview available'}</pre>
-                        </div>
-                        
-                        <div style="margin-top: 20px; text-align: left;">
-                            <p><strong>📝 Original Text:</strong> ${data.text}</p>
-                            <p><strong>📏 Length:</strong> ${data.text.length} characters</p>
-                            ${data.text.startsWith('http') ? `<p><strong>🔗</strong> <a href="${data.text}" target="_blank">Open URL</a></p>` : ''}
-                        </div>
-                        
-                        <div style="margin-top: 20px;">
-                            <button onclick="copyToClipboard('${data.text.replace(/'/g, "\\'")}')" class="btn" style="background: #17a2b8;">
-                                📋 Copy Text
-                            </button>
-                            ${data.text.startsWith('http') ? `
-                            <button onclick="window.open('${data.text}', '_blank')" class="btn" style="background: #28a745;">
-                                🔗 Open URL
-                            </button>
-                            ` : ''}
-                        </div>
-                    `;
+            }, function(error) {
+                if (error) {
+                    alert('Error generating QR code: ' + error);
                 } else {
-                    resultDiv.innerHTML = `
-                        <div class="error">
-                            <h3>❌ Failed to Generate QR Code</h3>
-                            <p>Error: ${data.error || 'Unknown error'}</p>
-                            ${data.message ? `<p>${data.message}</p>` : ''}
-                        </div>
-                    `;
+                    currentQR = text;
+                    document.getElementById('download-btn').style.display = 'inline-block';
                 }
-                
-            } catch (error) {
-                console.error('Network error:', error);
-                resultDiv.innerHTML = `
-                    <div class="error">
-                        <h3>❌ Network Error</h3>
-                        <p>Failed to connect to server: ${error.message}</p>
-                        <p><small>Make sure your Flask server is running on localhost:5000</small></p>
-                    </div>
-                `;
-                showDebug({ error: error.message, stack: error.stack });
-            }
+            });
         }
         
-        function testExamples() {
-            const examples = [
-                "https://www.google.com",
-                "https://github.com",
-                "Hello World! This is a test QR code.",
-                "WIFI:S:MyNetwork;T:WPA;P:MyPassword;;",
-                "tel:+1234567890",
-                "mailto:example@example.com"
-            ];
+        function downloadQR() {
+            if (!currentQR) return;
             
-            const randomExample = examples[Math.floor(Math.random() * examples.length)];
-            document.getElementById('qr-text').value = randomExample;
-            
-            // Auto-generate after 1 second
-            setTimeout(() => {
-                document.getElementById('qr-text').focus();
-                generateQR();
-            }, 1000);
+            const canvas = document.querySelector('#qrcode canvas');
+            const link = document.createElement('a');
+            link.download = 'qrcode.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
         }
-        
-        function copyToClipboard(text) {
-            navigator.clipboard.writeText(text)
-                .then(() => alert('Copied to clipboard!'))
-                .catch(err => console.error('Copy failed:', err));
-        }
-        
-        // Auto-focus textarea on page load
-        window.onload = function() {
-            document.getElementById('qr-text').focus();
-        };
     </script>
 </body>
 </html>
