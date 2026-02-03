@@ -1,7 +1,51 @@
+import os
 import re
+from flask import Flask, send_from_directory, jsonify, request
+import qrcode
+import base64
+import io
 from urllib.parse import urlparse
 
-# Add this route to your existing app.py
+app = Flask(__name__, static_folder='.', static_url_path='')
+
+# Serve HTML files
+@app.route('/')
+def serve_index():
+    return send_from_directory('.', 'index.html')
+
+@app.route('/<page>.html')
+def serve_page(page):
+    return send_from_directory('.', f'{page}.html')
+
+# API endpoint for QR generation (using SVG - no Pillow needed)
+@app.route('/api/generate-qr', methods=['POST'])
+def generate_qr():
+    try:
+        data = request.json
+        text = data.get('text', 'Test QR')
+        
+        # Generate QR code as SVG (no Pillow needed)
+        import qrcode.image.svg
+        
+        # Create SVG factory
+        factory = qrcode.image.svg.SvgPathImage
+        qr = qrcode.make(text, image_factory=factory)
+        
+        # Get SVG as string
+        stream = io.BytesIO()
+        qr.save(stream)
+        svg_string = stream.getvalue().decode('utf-8')
+        
+        return jsonify({
+            "success": True,
+            "qr_code": svg_string,
+            "format": "svg",
+            "text": text
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# URL Security Analysis API (YOUR CODE)
 @app.route('/api/check-url', methods=['POST'])
 def check_url():
     try:
@@ -60,3 +104,7 @@ def check_url():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
