@@ -12,7 +12,7 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Arial', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
@@ -56,6 +56,7 @@
             font-size: 16px;
             resize: vertical;
             transition: border 0.3s;
+            font-family: inherit;
         }
         
         textarea:focus {
@@ -83,6 +84,7 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
+            min-width: 140px;
         }
         
         #generate-btn {
@@ -100,6 +102,7 @@
         #download-btn:disabled {
             background: #cccccc;
             cursor: not-allowed;
+            opacity: 0.6;
         }
         
         button:hover:not(:disabled) {
@@ -129,9 +132,9 @@
             border: 3px dashed #e0e0e0;
         }
         
-        #qr-output img {
-            max-width: 100%;
-            max-height: 100%;
+        #qr-output svg {
+            max-width: 90%;
+            max-height: 90%;
             padding: 20px;
             background: white;
         }
@@ -211,6 +214,7 @@
             font-size: 14px;
             cursor: pointer;
             transition: all 0.3s;
+            border: none;
         }
         
         .example-btn:hover {
@@ -222,7 +226,7 @@
 <body>
     <div class="container">
         <h1>🔳 QR Code Generator</h1>
-        <p class="subtitle">Generate QR codes from text, URLs, or any content</p>
+        <p class="subtitle">Generate SVG QR codes from any text or URL</p>
         
         <div class="input-group">
             <textarea id="text-input" placeholder="Enter text, URL, or any content here..."></textarea>
@@ -230,10 +234,10 @@
         
         <div class="button-group">
             <button id="generate-btn" onclick="generateQR()">
-                <i class="fas fa-qrcode"></i> Generate QR Code
+                <span>🔳</span> Generate QR Code
             </button>
             <button id="download-btn" onclick="downloadQR()" disabled>
-                <i class="fas fa-download"></i> Download PNG
+                <span>📥</span> Download SVG
             </button>
         </div>
         
@@ -242,12 +246,12 @@
         <div id="qr-container">
             <div id="qr-output">
                 <div class="placeholder">
-                    <i class="fas fa-qrcode" style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;"></i>
+                    <div style="font-size: 48px; margin-bottom: 15px; opacity: 0.3;">🔳</div>
                     <p>Your QR code will appear here</p>
                 </div>
             </div>
             <div class="qr-info" id="qr-info" style="display: none;">
-                <p><i class="fas fa-info-circle"></i> Scan this QR code with any QR scanner app</p>
+                <p><span style="color: #667eea;">ⓘ</span> Scan this QR code with any QR scanner app</p>
             </div>
         </div>
         
@@ -260,9 +264,6 @@
         </div>
     </div>
 
-    <!-- Font Awesome Icons -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
-    
     <script>
         let currentQRData = null;
         
@@ -288,10 +289,11 @@
             `;
             
             document.getElementById('download-btn').disabled = true;
+            document.getElementById('qr-info').style.display = 'none';
             hideMessage();
             
             try {
-                console.log('Sending request:', text);
+                console.log('Sending request to generate QR for:', text);
                 
                 const response = await fetch('/api/generate-qr', {
                     method: 'POST',
@@ -303,21 +305,22 @@
                 
                 console.log('Response status:', response.status);
                 
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
                 const result = await response.json();
                 console.log('Response data:', result);
                 
-                if (result.success) {
-                    // Display QR code image
-                    document.getElementById('qr-output').innerHTML = `
-                        <img src="${result.qr_code}" alt="QR Code for: ${text}">
-                    `;
-                    
+                if (result.success && result.qr_code) {
+                    // Display SVG QR code
+                    document.getElementById('qr-output').innerHTML = result.qr_code;
                     document.getElementById('qr-info').style.display = 'block';
                     document.getElementById('download-btn').disabled = false;
                     
                     currentQRData = {
-                        dataUrl: result.qr_code,
-                        filename: `qrcode-${Date.now()}.png`,
+                        svg: result.qr_code,
+                        filename: `qrcode-${Date.now()}.svg`,
                         text: text
                     };
                     
@@ -325,7 +328,7 @@
                 } else {
                     document.getElementById('qr-output').innerHTML = `
                         <div class="placeholder">
-                            <i class="fas fa-exclamation-triangle" style="font-size: 48px; margin-bottom: 15px; color: #ff9800;"></i>
+                            <div style="font-size: 48px; margin-bottom: 15px; color: #ff9800;">⚠️</div>
                             <p>Failed to generate QR code</p>
                         </div>
                     `;
@@ -335,37 +338,26 @@
                 console.error('Error:', error);
                 document.getElementById('qr-output').innerHTML = `
                     <div class="placeholder">
-                        <i class="fas fa-exclamation-circle" style="font-size: 48px; margin-bottom: 15px; color: #f44336;"></i>
+                        <div style="font-size: 48px; margin-bottom: 15px; color: #f44336;">❌</div>
                         <p>Connection error</p>
+                        <p style="font-size: 14px; margin-top: 10px;">${error.message}</p>
                     </div>
                 `;
-                showMessage('❌ Network error: ' + error.message, 'error');
+                showMessage('❌ Error: ' + error.message, 'error');
             }
         }
         
         function downloadQR() {
-            if (!currentQRData || !currentQRData.dataUrl) {
+            if (!currentQRData || !currentQRData.svg) {
                 showMessage('No QR code to download', 'error');
                 return;
             }
             
             try {
-                // Convert base64 to blob
-                const dataUrl = currentQRData.dataUrl;
-                const arr = dataUrl.split(',');
-                const mime = arr[0].match(/:(.*?);/)[1];
-                const bstr = atob(arr[1]);
-                let n = bstr.length;
-                const u8arr = new Uint8Array(n);
-                
-                while (n--) {
-                    u8arr[n] = bstr.charCodeAt(n);
-                }
-                
-                const blob = new Blob([u8arr], { type: mime });
+                // Create download link for SVG
+                const blob = new Blob([currentQRData.svg], { type: 'image/svg+xml' });
                 const url = URL.createObjectURL(blob);
                 
-                // Create download link
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = currentQRData.filename;
@@ -374,7 +366,7 @@
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
                 
-                showMessage('✅ QR code downloaded!', 'success');
+                showMessage('✅ QR code downloaded as SVG!', 'success');
             } catch (error) {
                 console.error('Download error:', error);
                 showMessage('❌ Failed to download QR code', 'error');
@@ -405,11 +397,11 @@
             }
         });
         
-        // Auto-generate when page loads with example text (optional)
+        // Auto-generate when page loads with example text
         window.addEventListener('load', function() {
-            // Uncomment to auto-generate an example QR on load:
+            // Optional: Uncomment to auto-generate an example QR on load
             // document.getElementById('text-input').value = 'https://www.example.com';
-            // setTimeout(generateQR, 1000);
+            // setTimeout(generateQR, 500);
         });
     </script>
 </body>
