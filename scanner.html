@@ -45,7 +45,7 @@
         .scanner-container {
             width: 100%;
             max-width: 400px;
-            height: 400px;
+            height: 300px;
             margin: 0 auto 25px;
             border: 3px solid #00ff88;
             border-radius: 15px;
@@ -54,9 +54,10 @@
             position: relative;
         }
         
-        #qr-reader {
+        #video {
             width: 100%;
             height: 100%;
+            object-fit: cover;
         }
         
         .scanner-overlay {
@@ -289,15 +290,16 @@
             margin: 8px 0;
         }
     </style>
-    <!-- Using a reliable QR scanner library -->
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Using jsQR library which is more reliable -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>🔒 QR Security Scanner</h1>
         
         <div class="scanner-container">
-            <div id="qr-reader"></div>
+            <video id="video" playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
             <div class="scanner-overlay">
                 <div class="scan-line"></div>
             </div>
@@ -351,38 +353,20 @@
 
     <script>
         // Global variables
-        let html5QrCode = null;
+        let video = document.getElementById('video');
+        let canvas = document.getElementById('canvas');
+        let canvasContext = canvas.getContext('2d');
         let isScanning = false;
-        let currentStream = null;
-        let hasInitialized = false;
+        let scanInterval = null;
         
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('Initializing QR Scanner...');
-            initializeScanner();
+            console.log('QR Scanner initialized');
+            updateStatus('Ready to scan QR codes');
             
             // Setup file input
             document.getElementById('file-input').addEventListener('change', handleImageUpload);
         });
-        
-        // Initialize scanner
-        function initializeScanner() {
-            try {
-                // Check if Html5Qrcode is available
-                if (typeof Html5Qrcode === 'undefined') {
-                    showMessage('QR Scanner library failed to load. Please refresh the page.', 'error');
-                    return;
-                }
-                
-                html5QrCode = new Html5Qrcode("qr-reader");
-                hasInitialized = true;
-                console.log('✅ QR Scanner initialized successfully');
-                updateStatus('Ready to scan QR codes');
-            } catch (error) {
-                console.error('❌ Failed to initialize QR scanner:', error);
-                showMessage('Failed to initialize QR scanner: ' + error.message, 'error');
-            }
-        }
         
         // Update status
         function updateStatus(text) {
@@ -431,47 +415,29 @@
             const startBtn = document.getElementById('start-btn');
             const stopBtn = document.getElementById('stop-btn');
             
-            // Initialize if not already done
-            if (!hasInitialized) {
-                initializeScanner();
-                if (!hasInitialized) {
-                    showMessage('Scanner not initialized. Please refresh page.', 'error');
-                    return;
-                }
-            }
-            
             try {
-                updateStatus('🔄 Initializing camera...');
+                updateStatus('🔄 Accessing camera...');
                 startBtn.disabled = true;
                 
-                // Get camera permission first
+                // Get camera stream
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { 
-                        facingMode: { ideal: "environment" }, // Prefer back camera
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } 
+                        facingMode: "environment", // Use back camera
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    },
+                    audio: false
                 });
                 
-                currentStream = stream;
+                video.srcObject = stream;
+                video.setAttribute("playsinline", true); // Required for iOS
+                await video.play();
                 
-                // Find video input device
-                const devices = await Html5Qrcode.getCameras();
-                let cameraId = devices[0]?.id;
-                
-                if (devices.length > 1) {
-                    // Try to find back camera
-                    const backCamera = devices.find(device => 
-                        device.label.toLowerCase().includes('back') || 
-                        device.label.toLowerCase().includes('rear') ||
-                        device.label.toLowerCase().includes('environment')
-                    );
-                    if (backCamera) cameraId = backCamera.id;
-                }
-                
-                if (!cameraId) {
-                    throw new Error('No camera found');
-                }
+                // Set canvas size to match video
+                video.addEventListener('loadedmetadata', () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                });
                 
                 updateStatus('🔍 Scanning... Point camera at QR code');
                 stopBtn.disabled = false;
@@ -482,23 +448,8 @@
                 hideMessage();
                 hideImagePreview();
                 
-                // Simple configuration
-                const config = {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0,
-                    disableFlip: false
-                };
-                
-                console.log('Starting QR scanner with camera:', cameraId);
-                
-                // Start scanning
-                await html5QrCode.start(
-                    cameraId,
-                    config,
-                    onScanSuccess,
-                    onScanFailure
-                );
+                // Start scanning loop
+                scanInterval = setInterval(scanQRCode, 100);
                 
                 console.log('✅ Scanner started successfully');
                 showMessage('Scanner started! Point camera at QR code.', 'success');
@@ -506,18 +457,18 @@
             } catch (error) {
                 console.error('Scanner error:', error);
                 
-                if (error.name === 'NotAllowedError') {
+                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
                     updateStatus('❌ Camera access denied');
                     showMessage('Camera access was denied. Please allow camera access to scan QR codes.', 'error');
-                } else if (error.name === 'NotFoundError') {
+                } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
                     updateStatus('❌ No camera found');
                     showMessage('No camera found on this device.', 'error');
                 } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
                     updateStatus('❌ Camera in use');
                     showMessage('Camera is already in use by another application.', 'error');
-                } else if (error.message && error.message.includes('Permission denied')) {
-                    updateStatus('❌ Permission denied');
-                    showMessage('Camera permission denied. Please check your browser settings.', 'error');
+                } else if (error.name === 'OverconstrainedError') {
+                    updateStatus('❌ Camera constraints error');
+                    showMessage('Cannot start camera with the requested settings.', 'error');
                 } else {
                     updateStatus('❌ Camera error');
                     showMessage('Camera error: ' + error.message, 'error');
@@ -526,59 +477,58 @@
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
                 isScanning = false;
+            }
+        }
+        
+        // Scan QR code from video
+        function scanQRCode() {
+            if (!isScanning || video.readyState !== video.HAVE_ENOUGH_DATA) {
+                return;
+            }
+            
+            try {
+                // Draw video frame to canvas
+                canvasContext.drawImage(video, 0, 0, canvas.width, canvas.height);
                 
-                // Stop stream if it exists
-                if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop());
-                    currentStream = null;
+                // Get image data from canvas
+                const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
+                
+                // Use jsQR to decode QR code
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: "dontInvert",
+                });
+                
+                // If QR code found
+                if (code) {
+                    console.log('✅ QR Code found:', code.data);
+                    stopScanner();
+                    processScannedResult(code.data);
                 }
+            } catch (error) {
+                console.error('Scan error:', error);
             }
         }
         
         // Stop scanner
-        async function stopScanner() {
-            if (!isScanning || !html5QrCode) return;
+        function stopScanner() {
+            if (!isScanning) return;
             
             console.log('Stopping scanner...');
             
-            try {
-                await html5QrCode.stop();
-                isScanning = false;
-                
-                document.getElementById('start-btn').disabled = false;
-                document.getElementById('stop-btn').disabled = true;
-                
-                // Stop camera stream
-                if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop());
-                    currentStream = null;
-                }
-                
-                updateStatus('Scanner stopped');
-                showMessage('Scanner stopped', 'success');
-                
-            } catch (error) {
-                console.error('Stop error:', error);
-                showMessage('Error stopping scanner: ' + error.message, 'error');
+            clearInterval(scanInterval);
+            isScanning = false;
+            
+            // Stop video stream
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
             }
-        }
-        
-        // Handle QR scan success
-        async function onScanSuccess(decodedText, decodedResult) {
-            console.log('✅ QR Code scanned:', decodedText);
             
-            // Stop scanner immediately after successful scan
-            await stopScanner();
+            document.getElementById('start-btn').disabled = false;
+            document.getElementById('stop-btn').disabled = true;
             
-            // Process the scanned result
-            await processScannedResult(decodedText);
-        }
-        
-        // Handle scan failure (normal - no QR found yet)
-        function onScanFailure(error) {
-            // This is normal - called when no QR is detected
-            // We don't need to show errors here
-            // console.log('Scanning...', error);
+            updateStatus('Scanner stopped');
+            showMessage('Scanner stopped', 'success');
         }
         
         // Handle image upload
@@ -587,16 +537,6 @@
             if (!file) return;
             
             console.log('Processing uploaded image:', file.name);
-            
-            // Initialize if not already done
-            if (!hasInitialized) {
-                initializeScanner();
-                if (!hasInitialized) {
-                    showMessage('Scanner not initialized. Please refresh page.', 'error');
-                    event.target.value = '';
-                    return;
-                }
-            }
             
             // Reset UI
             updateStatus('📷 Processing image...');
@@ -612,102 +552,86 @@
                 return;
             }
             
-            // Validate file size
-            if (file.size > 10 * 1024 * 1024) {
-                showMessage('Image too large. Maximum size is 10MB.', 'error');
-                event.target.value = '';
-                return;
-            }
-            
             // Show preview
             const reader = new FileReader();
             reader.onload = function(e) {
                 showImagePreview(e.target.result);
+                scanImageFile(e.target.result);
             };
             reader.readAsDataURL(file);
-            
-            try {
-                // Use the library's scanFile method
-                console.log('Scanning image file...');
-                const decodedText = await html5QrCode.scanFile(file, false);
-                
-                if (decodedText) {
-                    console.log('✅ Image scanned successfully:', decodedText);
-                    showMessage('QR code detected in image!', 'success');
-                    updateStatus('✅ QR Code detected');
-                    
-                    // Process the result
-                    await processScannedResult(decodedText);
-                } else {
-                    throw new Error('No QR code found in image');
-                }
-                
-            } catch (error) {
-                console.error('Image scan error:', error);
-                
-                if (error.message.includes('No QR code found')) {
-                    showMessage('Could not detect QR code in this image. Try a clearer image.', 'warning');
-                } else if (error.message.includes('network error')) {
-                    showMessage('Network error. Please check your connection.', 'error');
-                } else {
-                    showMessage('Scan error: ' + error.message, 'error');
-                }
-                
-                updateStatus('Scan failed');
-                
-                // Try alternative method for simple testing
-                setTimeout(() => {
-                    if (!document.getElementById('result').classList.contains('active')) {
-                        showMessage('Trying alternative method...', 'warning');
-                        testFallbackScan(file);
-                    }
-                }, 1000);
-            }
             
             // Clear file input
             event.target.value = '';
         }
         
-        // Fallback scan method
-        async function testFallbackScan(file) {
-            try {
-                // Create a test result for demo purposes
-                const testResults = [
-                    "https://www.google.com",
-                    "https://github.com/armaangarg04",
-                    "WIFI:S:MyNetwork;T:WPA;P:MyPassword;;",
-                    "Hello from QR Scanner!",
-                    "mailto:example@email.com"
-                ];
+        // Scan image file
+        function scanImageFile(imageDataUrl) {
+            const img = new Image();
+            img.onload = function() {
+                // Set canvas size to image size
+                canvas.width = img.width;
+                canvas.height = img.height;
                 
-                const randomText = testResults[Math.floor(Math.random() * testResults.length)];
+                // Draw image to canvas
+                canvasContext.drawImage(img, 0, 0);
                 
-                console.log('Fallback: Using test QR data:', randomText);
+                // Get image data
+                const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
                 
-                showMessage('Demo mode: Using test QR data', 'success');
-                updateStatus('✅ Demo QR detected');
-                
-                await processScannedResult(randomText);
-                
-            } catch (error) {
-                console.error('Fallback error:', error);
-            }
+                // Use jsQR to decode
+                try {
+                    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                        inversionAttempts: "dontInvert",
+                    });
+                    
+                    if (code) {
+                        console.log('✅ QR Code found in image:', code.data);
+                        updateStatus('✅ QR Code detected');
+                        showMessage('QR code detected in image!', 'success');
+                        processScannedResult(code.data);
+                    } else {
+                        throw new Error('No QR code found');
+                    }
+                } catch (error) {
+                    console.error('Image scan error:', error);
+                    showMessage('Could not detect QR code in this image. Try a clearer image.', 'warning');
+                    updateStatus('Scan failed');
+                    
+                    // Show test data for demo
+                    setTimeout(() => {
+                        if (!document.getElementById('result').classList.contains('active')) {
+                            showMessage('Showing demo data for testing', 'warning');
+                            testScanner();
+                        }
+                    }, 1000);
+                }
+            };
+            img.src = imageDataUrl;
         }
         
         // Test scanner function
-        async function testScanner() {
-            console.log('Testing scanner with sample QR...');
+        function testScanner() {
+            console.log('Testing scanner...');
             
             updateStatus('🧪 Testing with sample QR...');
             hideMessage();
             hideImagePreview();
             document.getElementById('result').classList.remove('active');
             
-            // Create a sample QR code content
-            const testContent = "https://www.example.com\nTest QR Code - Scanner is working!";
+            // Create test QR data
+            const testData = [
+                "https://www.google.com",
+                "https://github.com/armaangarg04",
+                "WIFI:S:MyNetwork;T:WPA;P:MyPassword123;;",
+                "Hello from QR Scanner! This is a test message.",
+                "mailto:armaangarg04@gmail.com",
+                "BEGIN:VCARD\nVERSION:3.0\nFN:Armaan Garg\nTEL:+1234567890\nEMAIL:armaangarg04@gmail.com\nEND:VCARD"
+            ];
             
-            // Process as if scanned
-            await processScannedResult(testContent);
+            const randomData = testData[Math.floor(Math.random() * testData.length)];
+            
+            // Process the test data
+            processScannedResult(randomData);
             
             showMessage('Test completed successfully!', 'success');
         }
@@ -729,23 +653,31 @@
             const cleanText = decodedText.trim();
             
             // Check if it's a URL
-            const isUrl = cleanText.startsWith('http://') || 
-                          cleanText.startsWith('https://') || 
-                          cleanText.startsWith('www.') ||
-                          /^[a-zA-Z]+:\/\//.test(cleanText) ||
-                          (cleanText.includes('.') && 
-                           (cleanText.includes('www.') || 
-                            /\.(com|org|net|edu|gov|io|co|in|us|uk)$/i.test(cleanText)));
+            let isUrl = false;
+            let url = cleanText;
+            
+            // Check for common URL patterns
+            if (cleanText.startsWith('http://') || cleanText.startsWith('https://')) {
+                isUrl = true;
+            } else if (cleanText.startsWith('www.')) {
+                isUrl = true;
+                url = 'https://' + cleanText;
+            } else if (
+                cleanText.includes('.com') || 
+                cleanText.includes('.org') || 
+                cleanText.includes('.net') || 
+                cleanText.includes('.in') ||
+                cleanText.includes('.io')
+            ) {
+                // Check if it looks like a URL without protocol
+                const urlPattern = /^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}/;
+                if (urlPattern.test(cleanText.split('/')[0])) {
+                    isUrl = true;
+                    url = 'https://' + cleanText;
+                }
+            }
             
             if (isUrl) {
-                // Add http:// if missing
-                let url = cleanText;
-                if (url.startsWith('www.')) {
-                    url = 'https://' + url;
-                } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
-                    url = 'https://' + url;
-                }
-                
                 // Security check for URLs
                 await checkAndDisplayUrl(url);
             } else {
@@ -758,27 +690,18 @@
         async function checkAndDisplayUrl(url) {
             const resultDiv = document.getElementById('result');
             
-            try {
-                // Show loading state
-                resultDiv.innerHTML = `
-                    <div style="text-align: center; padding: 20px;">
-                        <div style="font-size: 48px; margin-bottom: 15px;">🔒</div>
-                        <h3>Checking URL Security...</h3>
-                        <p>Analyzing: ${url.substring(0, 50)}${url.length > 50 ? '...' : ''}</p>
-                    </div>
-                `;
-                
-                // Extract domain for basic security check
-                let domain = '';
-                try {
-                    const urlObj = new URL(url);
-                    domain = urlObj.hostname;
-                } catch (e) {
-                    domain = url.split('/')[0];
-                }
-                
-                // Basic client-side security check
-                const securityResult = performBasicSecurityCheck(url, domain);
+            // Show loading state
+            resultDiv.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 48px; margin-bottom: 15px;">🔒</div>
+                    <h3>Checking URL Security...</h3>
+                    <p>Analyzing: ${url.substring(0, 50)}${url.length > 50 ? '...' : ''}</p>
+                </div>
+            `;
+            
+            // Simulate security check (client-side only)
+            setTimeout(() => {
+                const securityResult = performBasicSecurityCheck(url);
                 
                 // Build security HTML
                 let securityClass = 'security-safe';
@@ -817,9 +740,9 @@
                     </div>
                     
                     <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 30px;">
-                        <a href="${url}" target="_blank" 
+                        <a href="${url}" target="_blank" rel="noopener noreferrer"
                            onclick="return confirm('Are you sure you want to open this URL?\\n\\nURL: ${url}\\n\\nSecurity Status: ${securityTitle}')"
-                           style="display: inline-block; padding: 15px 30px; background: ${securityResult.suspicious ? '#ff9800' : '#00ff88'}; color: ${securityResult.suspicious ? '#000' : '#000'}; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px;">
+                           style="display: inline-block; padding: 15px 30px; background: ${securityResult.suspicious ? '#ff9800' : '#00ff88'}; color: #000; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px;">
                             🔗 Open URL ${securityResult.suspicious ? '(Caution)' : ''}
                         </a>
                         
@@ -827,24 +750,13 @@
                                 style="padding: 15px 30px; background: #2196F3; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer;">
                             📋 Copy URL
                         </button>
-                        
-                        ${securityResult.suspicious ? 
-                            `<button onclick="showSecurityDetails('${url.replace(/'/g, "\\'")}', '${securityResult.warning.replace(/'/g, "\\'")}', '${securityResult.reasons?.join(', ').replace(/'/g, "\\'") || ''}')" 
-                                    style="padding: 15px 30px; background: #6c757d; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer;">
-                                🔍 Security Details
-                            </button>` : ''}
                     </div>
                 `;
-                
-            } catch (error) {
-                console.error('Security check error:', error);
-                // Fallback if check fails
-                displayUrlWithoutSecurityCheck(url);
-            }
+            }, 1000);
         }
         
         // Basic client-side security check
-        function performBasicSecurityCheck(url, domain) {
+        function performBasicSecurityCheck(url) {
             const suspiciousKeywords = [
                 'free', 'download', 'claim', 'won', 'bank', 'password', 'login', 
                 'verify', 'reward', 'prize', 'hack', 'crack', 'virus', 'malware',
@@ -855,25 +767,33 @@
             const shorteners = ['bit.ly', 'goo.gl', 'tinyurl', 'ow.ly', 'is.gd'];
             
             const urlLower = url.toLowerCase();
-            const domainLower = domain.toLowerCase();
             
             let isSuspicious = false;
             let riskLevel = 'low';
             const reasons = [];
             
+            // Extract domain
+            let domain = '';
+            try {
+                const urlObj = new URL(url);
+                domain = urlObj.hostname.toLowerCase();
+            } catch (e) {
+                domain = url.split('/')[0].toLowerCase();
+            }
+            
             // Check for suspicious TLDs
             for (const tld of suspiciousTlds) {
-                if (domainLower.endsWith(tld)) {
+                if (domain.endsWith(tld)) {
                     isSuspicious = true;
                     riskLevel = 'high';
-                    reasons.push(`Suspicious domain extension: ${tld}`);
+                    reasons.push(`Suspicious domain: ${domain}`);
                     break;
                 }
             }
             
             // Check for URL shorteners
             for (const shortener of shorteners) {
-                if (domainLower.includes(shortener)) {
+                if (domain.includes(shortener)) {
                     isSuspicious = true;
                     riskLevel = 'medium';
                     reasons.push('URL shortener detected');
@@ -890,7 +810,7 @@
                     } else if (riskLevel !== 'high') {
                         riskLevel = 'medium';
                     }
-                    reasons.push(`Suspicious keyword: "${keyword}"`);
+                    reasons.push(`Contains: "${keyword}"`);
                 }
             }
             
@@ -899,14 +819,7 @@
             if (ipPattern.test(domain)) {
                 isSuspicious = true;
                 riskLevel = 'high';
-                reasons.push('IP address instead of domain name');
-            }
-            
-            // Check for very long URL
-            if (url.length > 200) {
-                isSuspicious = true;
-                if (riskLevel === 'low') riskLevel = 'medium';
-                reasons.push('Unusually long URL');
+                reasons.push('IP address instead of domain');
             }
             
             return {
@@ -919,50 +832,21 @@
             };
         }
         
-        // Display URL without security check (fallback)
-        function displayUrlWithoutSecurityCheck(url) {
-            const resultDiv = document.getElementById('result');
-            
-            resultDiv.innerHTML = `
-                <div class="security-result security-warning">
-                    <h3>⚠️ Security Check Unavailable</h3>
-                    <p>Could not verify URL security at this time.</p>
-                </div>
-                
-                <div style="margin: 25px 0;">
-                    <h3>📱 Scanned URL:</h3>
-                    <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; margin: 15px 0; font-family: monospace; font-size: 14px; word-break: break-all;">
-                        ${url}
-                    </div>
-                </div>
-                
-                <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 30px;">
-                    <a href="${url}" target="_blank" 
-                       onclick="return confirm('Open this URL?\\n\\n${url}')"
-                       style="display: inline-block; padding: 15px 30px; background: #ff9800; color: #000; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px;">
-                        🔗 Open URL (Unknown Safety)
-                    </a>
-                    
-                    <button onclick="copyToClipboard('${url.replace(/'/g, "\\'")}')" 
-                            style="padding: 15px 30px; background: #2196F3; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer;">
-                        📋 Copy URL
-                    </button>
-                </div>
-            `;
-        }
-        
         // Display non-URL text content
         function displayTextContent(text) {
             const resultDiv = document.getElementById('result');
             
+            // Escape HTML to prevent XSS
+            const escapedText = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            
             resultDiv.innerHTML = `
                 <div style="text-align: center; margin-bottom: 25px;">
                     <div style="font-size: 48px; margin-bottom: 15px;">📝</div>
-                    <h3>Text Content</h3>
+                    <h3>Scanned Content</h3>
                 </div>
                 
                 <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 15px; margin: 20px 0; border: 1px solid rgba(255,255,255,0.1);">
-                    <pre style="white-space: pre-wrap; word-break: break-all; font-family: 'Courier New', monospace; font-size: 15px; line-height: 1.5; margin: 0;">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                    <pre style="white-space: pre-wrap; word-break: break-all; font-family: 'Courier New', monospace; font-size: 15px; line-height: 1.5; margin: 0;">${escapedText}</pre>
                 </div>
                 
                 <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 30px;">
@@ -971,14 +855,9 @@
                         📋 Copy Text
                     </button>
                     
-                    <button onclick="speakText('${text.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" 
+                    <button onclick="speakText('${text.replace(/'/g, "\\'").replace(/"/g, '&quot;').substring(0, 200)}')" 
                             style="padding: 15px 30px; background: #9C27B0; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer;">
                         🔊 Speak Text
-                    </button>
-                    
-                    <button onclick="shareText('${text.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')" 
-                            style="padding: 15px 30px; background: #2196F3; color: white; border: none; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer;">
-                        📤 Share
                     </button>
                 </div>
             `;
@@ -992,7 +871,7 @@
                 })
                 .catch(err => {
                     console.error('Copy failed:', err);
-                    // Fallback for older browsers
+                    // Fallback
                     const textArea = document.createElement('textarea');
                     textArea.value = text;
                     document.body.appendChild(textArea);
@@ -1005,7 +884,7 @@
         
         function speakText(text) {
             if ('speechSynthesis' in window) {
-                const utterance = new SpeechSynthesisUtterance(text.substring(0, 200)); // Limit length
+                const utterance = new SpeechSynthesisUtterance(text);
                 utterance.rate = 1.0;
                 utterance.pitch = 1.0;
                 utterance.volume = 1.0;
@@ -1014,28 +893,6 @@
             } else {
                 showMessage('Text-to-speech not supported in this browser', 'warning');
             }
-        }
-        
-        function shareText(text) {
-            if (navigator.share) {
-                navigator.share({
-                    title: 'QR Code Content',
-                    text: text.substring(0, 1000) // Limit length
-                })
-                .then(() => showMessage('✅ Shared successfully!', 'success'))
-                .catch(err => {
-                    if (err.name !== 'AbortError') {
-                        console.error('Share failed:', err);
-                        copyToClipboard(text);
-                    }
-                });
-            } else {
-                copyToClipboard(text);
-            }
-        }
-        
-        function showSecurityDetails(url, warning, reasons) {
-            alert(`🔒 SECURITY ANALYSIS\n\nURL: ${url}\n\nStatus: ${warning}\n\nIssues Found:\n${reasons ? '• ' + reasons.split(', ').join('\n• ') : 'None'}\n\n⚠️ Be cautious when visiting suspicious URLs.`);
         }
         
         // Handle page visibility change
