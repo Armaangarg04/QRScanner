@@ -4,6 +4,7 @@ from flask import Flask, send_from_directory, jsonify, request
 import qrcode
 import io
 from urllib.parse import urlparse
+from qrcode.image.svg import SvgPathImage  # ✅ CORRECT IMPORT
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 
@@ -33,7 +34,7 @@ def generate_qr():
         
         print(f"🔳 Generating QR for: {text[:50]}...")
         
-        # SIMPLE SVG QR GENERATION - NO PILLOW NEEDED
+        # SIMPLE SVG QR GENERATION
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -43,9 +44,8 @@ def generate_qr():
         qr.add_data(text)
         qr.make(fit=True)
         
-        # Create SVG image using qrcode's built-in SVG factory
-        factory = qrcode.image.svg.SvgPathImage
-        img = qr.make_image(image_factory=factory, fill_color="black", back_color="white")
+        # ✅ CORRECT: Use the imported SvgPathImage directly
+        img = qr.make_image(image_factory=SvgPathImage, fill_color="black", back_color="white")
         
         # Save to string (SVG format)
         stream = io.BytesIO()
